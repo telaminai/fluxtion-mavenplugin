@@ -62,14 +62,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
         <tag>v1.8</tag>
     </scm>
 
-    <distributionManagement>
-        <repository>
-            <id>repsy-fluxtion</id>
-            <name>Fluxtion public maven repo on Repsy</name>
-            <url>https://repo.repsy.io/mvn/fluxtion/fluxtion-public</url>
-        </repository>
-    </distributionManagement>
-
     <build>
         <plugins>
             <plugin>
