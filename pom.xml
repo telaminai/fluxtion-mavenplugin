@@ -23,7 +23,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
 
     <groupId>com.fluxtion.dataflow</groupId>
     <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.1-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
     <name>fluxtion :: maven plugin</name>
 
@@ -51,7 +51,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
         <connection>scm:git:https://github.com/telaminai/fluxtion-mavenplugin.git</connection>
         <developerConnection>scm:git:https://github.com/telaminai/fluxtion-mavenplugin.git</developerConnection>
         <url>https://github.com/telaminai/fluxtion-mavenplugin</url>
-        <tag>v1.2.0</tag>
+        <tag>v1.8</tag>
     </scm>
 
     <distributionManagement>
