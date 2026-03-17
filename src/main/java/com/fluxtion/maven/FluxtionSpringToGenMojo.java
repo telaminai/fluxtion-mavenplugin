@@ -24,7 +24,7 @@ import static com.fluxtion.maven.FluxtionScanToGenMojo.RESOURCES_DIRECTORY;
 public class FluxtionSpringToGenMojo extends AbstractFluxtionMojo {
 
     public static final String GENERATOR_METHOD = "compileAot";
-    public static final String FLUXTION_GENERATOR_CLASS = "com.fluxtion.dataflow.extern.spring.FluxtionSpring";
+    public static final String FLUXTION_GENERATOR_CLASS = "com.telamin.fluxtion.builder.extern.spring.FluxtionSpring";
     @Parameter(required = true)
     protected String className;
     @Parameter(required = true)
@@ -52,9 +52,15 @@ public class FluxtionSpringToGenMojo extends AbstractFluxtionMojo {
                 System.setProperty(OUTPUT_DIRECTORY, outputDirectory);
                 System.setProperty(RESOURCES_DIRECTORY, resourcesDirectory);
                 URLClassLoader classLoader = buildFluxtionClassLoader();
-                Class<?> genClass = classLoader.loadClass(FLUXTION_GENERATOR_CLASS);
-                Method generatorMethod = genClass.getMethod(GENERATOR_METHOD, ClassLoader.class, File.class, String.class, String.class);
-                generatorMethod.invoke(null, classLoader, springFile, className, packageName);
+                ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
+                try {
+                    Thread.currentThread().setContextClassLoader(classLoader);
+                    Class<?> genClass = classLoader.loadClass(FLUXTION_GENERATOR_CLASS);
+                    Method generatorMethod = genClass.getMethod(GENERATOR_METHOD, ClassLoader.class, File.class, String.class, String.class);
+                    generatorMethod.invoke(null, classLoader, springFile, className, packageName);
+                } finally {
+                    Thread.currentThread().setContextClassLoader(oldContextClassLoader);
+                }
             } catch (Exception exception) {
                 getLog().error(exception);
                 throw new MojoExecutionException("problem setting building fluxtion class loader", exception);

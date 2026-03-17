@@ -9,6 +9,7 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -23,15 +24,55 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
 
     protected URLClassLoader buildFluxtionClassLoader() throws MalformedURLException, DependencyResolutionRequiredException {
         List<String> elements = project.getCompileClasspathElements();
-        URL[] urls = new URL[elements.size()];
-        String cp = "";
-        for (int i = 0; i < elements.size(); i++) {
-            cp += File.pathSeparator + elements.get(i);
-            urls[i] = new File(elements.get(i)).toURI().toURL();
+        List<URL> urlList = new ArrayList<>();
+        StringBuilder cp = new StringBuilder();
+        for (String element : elements) {
+            if (cp.length() > 0) {
+                cp.append(File.pathSeparator);
+            }
+            cp.append(element);
+            urlList.add(new File(element).toURI().toURL());
         }
+
+        final ClassLoader pluginClassLoader = getClass().getClassLoader();
+        if (pluginClassLoader instanceof URLClassLoader) {
+            urlList.addAll(Arrays.asList(((URLClassLoader) pluginClassLoader).getURLs()));
+        }
+
+        URL[] urls = urlList.toArray(new URL[0]);
         getLog().debug("user classpath URL list:" + Arrays.toString(urls));
-        URLClassLoader classLoader = URLClassLoader.newInstance(urls);
-        System.setProperty("FLUXTION.GENERATION.CLASSPATH", cp);
+
+        URLClassLoader classLoader = new URLClassLoader(urls, pluginClassLoader) {
+            @Override
+            public Class<?> loadClass(String name) throws ClassNotFoundException {
+                return loadClass(name, false);
+            }
+
+            @Override
+            protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                synchronized (getClassLoadingLock(name)) {
+                    Class<?> c = findLoadedClass(name);
+                    if (c == null) {
+                        // System classes and Maven APIs must always come from parent
+                        if (name.startsWith("java.") || name.startsWith("javax.") ||
+                                name.startsWith("org.apache.maven.") || name.startsWith("org.codehaus.plexus.")) {
+                            return super.loadClass(name, resolve);
+                        }
+                        try {
+                            c = findClass(name);
+                        } catch (ClassNotFoundException e) {
+                            c = super.loadClass(name, resolve);
+                        }
+                    }
+                    if (resolve) {
+                        resolveClass(c);
+                    }
+                    return c;
+                }
+            }
+        };
+
+        System.setProperty("FLUXTION.GENERATION.CLASSPATH", cp.toString());
         return classLoader;
     }
 }

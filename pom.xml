@@ -21,14 +21,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.fluxtion.dataflow</groupId>
-    <artifactId>dataflow-maven-plugin</artifactId>
+    <groupId>com.telamin.fluxtion</groupId>
+    <artifactId>fluxtion-maven-plugin</artifactId>
     <version>1.1-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
     <name>dataflow :: maven plugin</name>
 
     <description>A maven plugin integrating the fluxtion toolset with maven build cycle</description>
-    <url>https://github.com/v12technology/fluxtion-mavenplugin</url>
+    <url>https://github.com/telaminai/fluxtion-mavenplugin</url>
 
     <properties>
         <maven.version>3.2.5</maven.version>
@@ -48,17 +48,17 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
     </developers>
 
     <scm>
-        <connection>scm:git:https://github.com/telaminai/dataflow-mavenplugin.git</connection>
-        <developerConnection>scm:git:https://github.com/telaminai/dataflow-mavenplugin.git</developerConnection>
-        <url>https://github.com/telaminai/dataflow-mavenplugin</url>
+        <connection>scm:git:https://github.com/telaminai/fluxtion-mavenplugin.git</connection>
+        <developerConnection>scm:git:https://github.com/telaminai/fluxtion-mavenplugin.git</developerConnection>
+        <url>https://github.com/telaminai/fluxtion-mavenplugin</url>
         <tag>v1.8</tag>
     </scm>
 
     <distributionManagement>
         <repository>
             <id>repsy-fluxtion</id>
-            <name>Fluxtion private maven repo on Repsy</name>
-            <url>https://repo.repsy.io/mvn/fluxtion/fluxtion-private</url>
+            <name>Fluxtion public maven repo on Repsy</name>
+            <url>https://repo.repsy.io/mvn/fluxtion/fluxtion-public</url>
         </repository>
     </distributionManagement>
 
@@ -174,5 +174,4 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
             <scope>test</scope>
         </dependency>
     </dependencies>
-
 </project>
