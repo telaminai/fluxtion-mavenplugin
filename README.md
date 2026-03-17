@@ -43,19 +43,7 @@ graph TD
 *   **Runtime Requirements**: At runtime, your application only needs the core Fluxtion runtime library to execute the AOT-generated event processors.
 
 ## Repository Configuration
-To use the `dataflow-maven-plugin`, you must include the following repository configuration in your client `pom.xml`:
-
-```xml
-<pluginRepositories>
-    <pluginRepository>
-        <id>repsy-fluxtion</id>
-        <name>Fluxtion public maven repo on Repsy</name>
-        <url>https://repo.repsy.io/mvn/fluxtion/fluxtion-public</url>
-    </pluginRepository>
-</pluginRepositories>
-```
-
-If the plugin's dependencies are also in the same repository, you may also need:
+The plugin's dependencies are also in the same repository, you will need:
 
 ```xml
 <repositories>
@@ -87,7 +75,7 @@ Scans compiled project classes for Fluxtion builder definitions and generates ev
 <plugin>
     <groupId>com.fluxtion.dataflow</groupId>
     <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.1-SNAPSHOT</version>
+    <version>1.2.1</version>
     <executions>
         <execution>
             <goals>
@@ -109,7 +97,7 @@ Generates a Fluxtion event processor from a Spring context definition.
 <plugin>
     <groupId>com.fluxtion.dataflow</groupId>
     <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.1-SNAPSHOT</version>
+    <version>1.2.1</version>
     <executions>
         <execution>
             <goals>
@@ -135,7 +123,7 @@ Generates event processors from YAML configuration files.
 <plugin>
     <groupId>com.fluxtion.dataflow</groupId>
     <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.1-SNAPSHOT</version>
+    <version>1.2.1</version>
     <executions>
         <execution>
             <goals>
