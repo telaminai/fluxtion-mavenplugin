@@ -1,4 +1,4 @@
-# fluxtion-mavenplugin
+# dataflow-maven-plugin
 A maven plugin integrating the fluxtion toolset with maven build cycle.
 
 ### Releasing

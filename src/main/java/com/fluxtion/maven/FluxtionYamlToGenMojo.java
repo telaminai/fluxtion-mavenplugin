@@ -34,16 +34,17 @@ public class FluxtionYamlToGenMojo extends AbstractFluxtionMojo {
 
     @Parameter(property = "resourcesDirectory")
     protected String resourcesDirectory;
+
     @Override
     public void execute() throws MojoExecutionException {
         if (System.getProperty("skipFluxtion") != null) {
             getLog().info("Fluxtion generation skipped.");
         } else {
             try {
-                if(outputDirectory == null){
+                if (outputDirectory == null) {
                     outputDirectory = project.getBuild().getSourceDirectory();
                 }
-                if(resourcesDirectory == null){
+                if (resourcesDirectory == null) {
                     resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
                 }
                 System.setProperty(OUTPUT_DIRECTORY, outputDirectory);

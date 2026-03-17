@@ -1,23 +1,14 @@
 package com.fluxtion.maven;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.DependencyResolutionRequiredException;
-import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
-import org.apache.maven.project.MavenProject;
 
 import java.io.File;
 import java.lang.reflect.Method;
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * @author greg higgins
@@ -41,6 +32,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
     public static final String FLUXTION_GENERATOR_CLASS = "com.telamin.fluxtion.Fluxtion";
     public static final String OUTPUT_DIRECTORY = "FLUXTION.OUTPUT.DIRECTORY";
     public static final String RESOURCES_DIRECTORY = "FLUXTION.RESOURCES.DIRECTORY";
+
     @Override
     public void execute() throws MojoExecutionException {
         if (System.getProperty("skipFluxtion") != null) {
@@ -52,10 +44,10 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
                 } else if (!buildDirectory.startsWith("/")) {
                     buildDirectory = project.getBasedir().getCanonicalPath() + "/" + buildDirectory;
                 }
-                if(outputDirectory == null){
+                if (outputDirectory == null) {
                     outputDirectory = project.getBuild().getSourceDirectory();
                 }
-                if(resourcesDirectory == null){
+                if (resourcesDirectory == null) {
                     resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
                 }
                 System.setProperty(OUTPUT_DIRECTORY, outputDirectory);
