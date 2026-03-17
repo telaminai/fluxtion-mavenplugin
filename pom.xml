@@ -21,8 +21,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.fluxtion.dataflow</groupId>
-    <artifactId>dataflow-maven-plugin</artifactId>
+    <groupId>com.telamin.fluxtion</groupId>
+    <artifactId>fluxtion-maven-plugin</artifactId>
     <version>1.2.2-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
     <name>fluxtion :: maven plugin</name>
