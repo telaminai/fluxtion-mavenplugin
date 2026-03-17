@@ -23,9 +23,9 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
 
     <groupId>com.fluxtion.dataflow</groupId>
     <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.2-SNAPSHOT</version>
+    <version>1.2.0-SNAPSHOT</version>
     <packaging>maven-plugin</packaging>
-    <name>dataflow :: maven plugin</name>
+    <name>fluxtion :: maven plugin</name>
 
     <description>A maven plugin integrating the fluxtion toolset with maven build cycle</description>
     <url>https://github.com/telaminai/fluxtion-mavenplugin</url>
@@ -42,8 +42,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
     <developers>
         <developer>
             <name>Greg Higgins</name>
-            <email>greg.higgins@v12technology.com</email>
-            <organization>V12 Technology Limited</organization>
+            <email>greg.higgins@telamin.com</email>
+            <organization>Telamin Limited</organization>
         </developer>
     </developers>
 
