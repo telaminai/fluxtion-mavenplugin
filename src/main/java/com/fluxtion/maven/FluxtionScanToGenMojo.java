@@ -9,6 +9,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.net.URLClassLoader;
+import java.util.Map;
 
 /**
  * @author greg higgins
@@ -38,6 +39,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
         if (System.getProperty("skipFluxtion") != null) {
             getLog().info("Fluxtion generation skipped.");
         } else {
+            Map<String, String> previousAuth = applyCompilerAuth();
             try {
                 if (buildDirectory == null) {
                     buildDirectory = project.getBasedir().getCanonicalPath() + "/target/classes";
@@ -65,6 +67,8 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             } catch (Exception exception) {
                 getLog().error(exception);
                 throw new MojoExecutionException("problem setting building fluxtion class loader", exception);
+            } finally {
+                CompilerCredentials.restore(previousAuth);
             }
         }
     }

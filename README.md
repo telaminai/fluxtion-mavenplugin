@@ -140,6 +140,71 @@ Generates event processors from YAML configuration files.
 ```
 *   `fluxtionConfigFiles`: (Required) Array of YAML configuration files to process.
 
+## Signing in to the Fluxtion compiler
+
+The generation goals can use a Fluxtion compiler account instead of a RapidAPI key. The compiler's address is
+not a secret, so it can go in the POM (`<compilerUrl>` in the plugin configuration), on the command line
+(`-Dfluxtion.compilerUrl=...`) or in the `FLUXTION_COMPILER_URL` environment variable. The examples use the
+placeholder `https://compiler.example.com`.
+
+**A credential is never accepted from a POM.** If a `<token>`, `<apiToken>` or `<credential>` parameter, or a
+credential property such as `fluxtion.remote.token` or `FLUXTION_API_TOKEN`, appears in the POM or one of its
+profiles, the build fails and says to use the environment variable or `fluxtion:login` instead.
+
+### Developer machine: `mvn fluxtion:login`
+
+```bash
+mvn fluxtion:login -Dfluxtion.compilerUrl=https://compiler.example.com
+```
+
+The goal prints a short code and a verification address. Open the address, enter the code and approve. If a
+desktop is available, pressing Enter opens the page in your browser; it never opens one by itself. When you
+approve, the plugin stores the credential in `~/.fluxtion/credentials` and prints your account and the credits you
+have left. The code expires after the time shown, and declining in the browser ends the attempt.
+
+On macOS and Linux the file is created owner-only (`rw-------`, in an `rwx------` directory) before anything is
+written to it. Windows has no POSIX permissions, so the file inherits the access list of your user profile, which
+by default only you and administrators can read. The plugin never writes the credential anywhere else, including
+`target/`, generated sources or reports, and never prints it.
+
+`mvn fluxtion:login` works inside a project that declares this plugin. Anywhere else, use the full coordinates
+(`mvn com.telamin.fluxtion:fluxtion-maven-plugin:<version>:login`) or add `com.telamin.fluxtion` to
+`<pluginGroups>` in `~/.m2/settings.xml`.
+
+### CI: `FLUXTION_API_TOKEN`
+
+CI never signs in interactively, and `fluxtion:login` refuses to run when the `CI` environment variable is set.
+An account administrator creates an automation credential in the account's credentials list, and you store it as
+a secret that the build sees as `FLUXTION_API_TOKEN`:
+
+```yaml
+# GitHub Actions
+env:
+  FLUXTION_API_TOKEN: ${{ secrets.FLUXTION_API_TOKEN }}
+  FLUXTION_COMPILER_URL: https://compiler.example.com
+```
+
+### Which credential is used
+
+1. `FLUXTION_API_TOKEN`, if it is set.
+2. Otherwise, the credential stored by `fluxtion:login`, against the address you signed in to unless
+   `compilerUrl` says otherwise.
+3. Otherwise, nothing changes: the builder uses your RapidAPI key as before.
+
+With a credential, the plugin runs the builder in token mode (the system properties `fluxtion.remote.auth=token`
+and `fluxtion.remote.token`, plus `fluxtion.remote.host` and `fluxtion.remote.port` from the compiler URL) only
+while the builder runs, and restores the earlier values afterwards.
+
+### Signing out: `mvn fluxtion:logout`
+
+```bash
+mvn fluxtion:logout
+```
+
+This revokes the stored credential on the service and deletes `~/.fluxtion/credentials`. If the service cannot be
+reached, the file is still deleted and the plugin says so; revoke the credential from the account's credentials
+list. Logout does not affect a `FLUXTION_API_TOKEN` set in your environment.
+
 ## Skipping Execution
 To temporarily disable the plugin during a build, use the `skipFluxtion` system property:
 
