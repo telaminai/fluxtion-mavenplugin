@@ -58,9 +58,21 @@ final class CompilerUrl {
         return new CompilerUrl(scheme, host, port);
     }
 
-    private static boolean isLoopback(String host) {
-        return "localhost".equalsIgnoreCase(host) || host.startsWith("127.") || "[::1]".equals(host)
+    private static final java.util.regex.Pattern LOOPBACK_V4 =
+            java.util.regex.Pattern.compile("127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}");
+
+    /**
+     * A loopback literal or {@code localhost}. Only an IPv4 literal counts: a DNS name such as
+     * {@code 127.example.com} starts with "127." but resolves anywhere.
+     */
+    static boolean isLoopback(String host) {
+        return "localhost".equalsIgnoreCase(host) || LOOPBACK_V4.matcher(host).matches() || "[::1]".equals(host)
                 || "::1".equals(host);
+    }
+
+    /** True when both name the same origin (scheme, host, port); host compared without case. */
+    boolean sameOrigin(CompilerUrl other) {
+        return other != null && scheme.equals(other.scheme) && host.equalsIgnoreCase(other.host) && port == other.port;
     }
 
     /** The value for the builder's {@code fluxtion.remote.host}: scheme and host, no port, no path. */

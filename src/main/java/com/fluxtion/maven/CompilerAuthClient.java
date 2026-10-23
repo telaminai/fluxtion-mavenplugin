@@ -122,7 +122,8 @@ final class CompilerAuthClient {
         if (deviceCode == null || userCode == null || uri == null) {
             throw new IOException("device sign-in response is missing device_code, user_code or verification_uri");
         }
-        return new DeviceAuthorization(deviceCode, userCode, uri, Json.str(m, "verification_uri_complete"),
+        return new DeviceAuthorization(deviceCode, printable(userCode), printable(uri),
+                printable(Json.str(m, "verification_uri_complete")),
                 Json.num(m, "expires_in", 600), Math.max(1, Json.num(m, "interval", 5)));
     }
 
@@ -187,7 +188,7 @@ final class CompilerAuthClient {
                 throw expired();
             }
             throw new DeviceFlowException(DeviceFlowException.Reason.FAILED,
-                    "sign-in failed: " + (error == null ? "HTTP " + r.status : error));
+                    "sign-in failed: " + (error == null ? "HTTP " + r.status : printable(error)));
         }
     }
 
@@ -227,12 +228,44 @@ final class CompilerAuthClient {
         }
     }
 
+    /**
+     * {@code text} with control characters replaced, so a server-supplied string printed to the terminal cannot
+     * carry escape sequences (rewriting earlier lines, hiding text, changing the title). Null stays null.
+     */
+    static String printable(String text) {
+        if (text == null) return null;
+        StringBuilder b = new StringBuilder(text.length());
+        for (int k = 0; k < text.length(); k++) {
+            char c = text.charAt(k);
+            b.append(Character.isISOControl(c) || c == '\u202e' || c == '\u202d' ? '?' : c);
+        }
+        return b.toString();
+    }
+
+    /**
+     * The address to hand to the system browser, or null when it is not an https page (or http on loopback): a
+     * server-supplied {@code file:} or custom-scheme URI must never be opened by the build.
+     */
+    static java.net.URI browsable(String uri) {
+        if (uri == null) return null;
+        try {
+            java.net.URI u = new java.net.URI(uri);
+            String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(java.util.Locale.ROOT);
+            String host = u.getHost();
+            if (host == null || u.getRawUserInfo() != null) return null;
+            if ("https".equals(scheme) || ("http".equals(scheme) && CompilerUrl.isLoopback(host))) return u;
+            return null;
+        } catch (java.net.URISyntaxException e) {
+            return null;
+        }
+    }
+
     /** Status and error code/message only: a response body is never echoed whole. */
     static String describe(Response r) {
         try {
             Map<String, Object> m = Json.object(r.body);
-            String code = Json.str(m, "error");
-            String message = Json.str(m, "message");
+            String code = printable(Json.str(m, "error"));
+            String message = printable(Json.str(m, "message"));
             return "HTTP " + r.status + (code == null ? "" : " " + code) + (message == null ? "" : ": " + message);
         } catch (IllegalArgumentException e) {
             return "HTTP " + r.status;

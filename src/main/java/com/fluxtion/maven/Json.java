@@ -11,8 +11,12 @@ import java.util.Map;
  */
 final class Json {
 
+    /** Deeper nesting is refused rather than recursed into: a hostile body must not end in StackOverflowError. */
+    static final int MAX_DEPTH = 32;
+
     private final String s;
     private int i;
+    private int depth;
 
     private Json(String s) {
         this.s = s;
@@ -85,11 +89,13 @@ final class Json {
     }
 
     private Map<String, Object> obj() {
+        if (++depth > MAX_DEPTH) throw fail();
         Map<String, Object> m = new LinkedHashMap<>();
         i++;
         ws();
         if (peek() == '}') {
             i++;
+            depth--;
             return m;
         }
         while (true) {
@@ -102,17 +108,22 @@ final class Json {
             m.put(k, value());
             ws();
             char c = next();
-            if (c == '}') return m;
+            if (c == '}') {
+                depth--;
+                return m;
+            }
             if (c != ',') throw fail();
         }
     }
 
     private List<Object> arr() {
+        if (++depth > MAX_DEPTH) throw fail();
         List<Object> l = new ArrayList<>();
         i++;
         ws();
         if (peek() == ']') {
             i++;
+            depth--;
             return l;
         }
         while (true) {
@@ -120,7 +131,10 @@ final class Json {
             l.add(value());
             ws();
             char c = next();
-            if (c == ']') return l;
+            if (c == ']') {
+                depth--;
+                return l;
+            }
             if (c != ',') throw fail();
         }
     }

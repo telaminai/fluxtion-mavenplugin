@@ -163,8 +163,8 @@ approve, the plugin stores the credential in `~/.fluxtion/credentials` and print
 have left. The code expires after the time shown, and declining in the browser ends the attempt.
 
 On macOS and Linux the file is created owner-only (`rw-------`, in an `rwx------` directory) before anything is
-written to it. Windows has no POSIX permissions, so the file inherits the access list of your user profile, which
-by default only you and administrators can read. The plugin never writes the credential anywhere else, including
+written to it. Windows has no POSIX permissions, so the plugin replaces the file's access list with a single entry for you
+before anything is written to it. The plugin never writes the credential anywhere else, including
 `target/`, generated sources or reports, and never prints it.
 
 `mvn fluxtion:login` works inside a project that declares this plugin. Anywhere else, use the full coordinates
@@ -173,7 +173,8 @@ by default only you and administrators can read. The plugin never writes the cre
 
 ### CI: `FLUXTION_API_TOKEN`
 
-CI never signs in interactively, and `fluxtion:login` refuses to run when the `CI` environment variable is set.
+CI never signs in interactively, and `fluxtion:login` refuses to run when the `CI` environment variable (or a
+CI system's own marker, such as `JENKINS_URL` or `TF_BUILD`) is set.
 An account administrator creates an automation credential in the account's credentials list, and you store it as
 a secret that the build sees as `FLUXTION_API_TOKEN`:
 
@@ -186,14 +187,19 @@ env:
 
 ### Which credential is used
 
-1. `FLUXTION_API_TOKEN`, if it is set.
-2. Otherwise, the credential stored by `fluxtion:login`, against the address you signed in to unless
-   `compilerUrl` says otherwise.
+1. `FLUXTION_API_TOKEN`, if it is set. A compiler URL (`FLUXTION_COMPILER_URL` or `<compilerUrl>`) is then
+   required: the build fails rather than send the credential to the builder's default host.
+2. Otherwise, the credential stored by `fluxtion:login`, sent only to the compiler that issued it. If
+   `compilerUrl` names a different compiler, the build fails and says to sign in to that one.
 3. Otherwise, nothing changes: the builder uses your RapidAPI key as before.
 
 With a credential, the plugin runs the builder in token mode (the system properties `fluxtion.remote.auth=token`
 and `fluxtion.remote.token`, plus `fluxtion.remote.host` and `fluxtion.remote.port` from the compiler URL) only
-while the builder runs, and restores the earlier values afterwards.
+while the builder runs, and restores the earlier values afterwards. In a parallel build (`mvn -T`) generation
+goals that use a credential take turns, because those properties are shared by the whole JVM.
+
+Committed configuration is checked as well as the POM: a credential property in a parent POM or in
+`.mvn/maven.config` / `.mvn/jvm.config` also fails the build.
 
 ### Signing out: `mvn fluxtion:logout`
 
@@ -201,7 +207,7 @@ while the builder runs, and restores the earlier values afterwards.
 mvn fluxtion:logout
 ```
 
-This revokes the stored credential on the service and deletes `~/.fluxtion/credentials`. If the service cannot be
+This revokes the stored credential on the service that issued it and deletes `~/.fluxtion/credentials`. If the service cannot be
 reached, the file is still deleted and the plugin says so; revoke the credential from the account's credentials
 list. Logout does not affect a `FLUXTION_API_TOKEN` set in your environment.
 

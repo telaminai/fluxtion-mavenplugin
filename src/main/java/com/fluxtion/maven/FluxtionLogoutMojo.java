@@ -39,8 +39,14 @@ public class FluxtionLogoutMojo extends AbstractCompilerAccountMojo {
         envNote();
     }
 
-    private void revoke(CredentialStore.Stored stored) throws MojoExecutionException {
-        CompilerUrl url = compilerUrl(stored.url);
+    private void revoke(CredentialStore.Stored stored) {
+        // only the service that issued the credential ever sees it: a configured compilerUrl is not consulted
+        CompilerUrl url;
+        try {
+            url = stored.url == null ? null : CompilerUrl.parse(stored.url);
+        } catch (IllegalArgumentException e) {
+            url = null;
+        }
         if (url == null || stored.credentialId == null) {
             getLog().warn("Could not revoke the credential on the service (no compiler URL or credential id"
                     + " recorded); revoke it from the account's credentials list.");

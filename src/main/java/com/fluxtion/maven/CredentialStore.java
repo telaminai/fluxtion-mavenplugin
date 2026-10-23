@@ -2,16 +2,24 @@ package com.fluxtion.maven;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Properties;
 import java.util.Set;
 
@@ -22,8 +30,7 @@ import java.util.Set;
  * <p>Location: {@code ~/.fluxtion/credentials}, overridable with the {@code fluxtion.credentialsFile} system
  * property. On a POSIX file system the directory is created {@code rwx------} and the file {@code rw-------}, and the
  * file is created with those permissions before any secret is written to it. On Windows (no POSIX permissions) the
- * file inherits the ACL of the user's profile directory, which by default only the user and administrators can read;
- * the plugin additionally clears the read and write flags for other users where the JVM allows it.</p>
+ * plugin replaces the file's access list with one entry for its owner before the secret is written.</p>
  */
 final class CredentialStore {
 
@@ -121,28 +128,27 @@ final class CredentialStore {
                 Files.createDirectories(dir);
             }
         }
-        Path tmp = dir.resolve(file.getFileName() + ".tmp");
-        Files.deleteIfExists(tmp);
-        if (posix) {
-            FileAttribute<Set<PosixFilePermission>> ownerOnly =
-                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"));
-            try {
-                Files.createFile(tmp, ownerOnly);
-            } catch (FileAlreadyExistsException e) {
-                throw new IOException("could not create " + tmp + " exclusively", e);
-            }
-        } else {
-            Files.createFile(tmp);
-            restrictNonPosix(tmp);
-        }
+        // a fresh name each time, created exclusively (CREATE_NEW never follows a planted link) and written through
+        // the same handle that created it: nothing can be swapped in between creation and the secret being written
+        Path tmp = dir.resolve(file.getFileName() + "." + java.util.UUID.randomUUID() + ".tmp");
         Properties p = new Properties();
         p.setProperty(KEY_TOKEN, s.token);
         if (s.credentialId != null) p.setProperty(KEY_CREDENTIAL_ID, s.credentialId);
         if (s.accountId != null) p.setProperty(KEY_ACCOUNT_ID, s.accountId);
         if (s.url != null) p.setProperty(KEY_URL, s.url);
-        try (OutputStream out = Files.newOutputStream(tmp)) {
-            p.store(out, "Fluxtion compiler credential - written by mvn fluxtion:login. Do not commit or share.");
-        } catch (IOException e) {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        p.store(bytes, "Fluxtion compiler credential - written by mvn fluxtion:login. Do not commit or share.");
+        Set<StandardOpenOption> options = EnumSet.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        FileAttribute<?>[] attrs = posix
+                ? new FileAttribute<?>[]{PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------"))}
+                : new FileAttribute<?>[0];
+        try (SeekableByteChannel ch = Files.newByteChannel(tmp, options, attrs)) {
+            if (!posix) restrictNonPosix(tmp);
+            ByteBuffer buf = ByteBuffer.wrap(bytes.toByteArray());
+            while (buf.hasRemaining()) ch.write(buf);
+        } catch (FileAlreadyExistsException e) {
+            throw new IOException("could not create " + tmp + " exclusively", e);
+        } catch (IOException | RuntimeException e) {
             Files.deleteIfExists(tmp);
             throw e;
         }
@@ -161,12 +167,25 @@ final class CredentialStore {
         return Files.deleteIfExists(file);
     }
 
-    private static void restrictNonPosix(Path p) {
-        java.io.File f = p.toFile();
-        // clear for everyone, then grant the owner; best effort, the profile directory's ACL is the real boundary
-        f.setReadable(false, false);
-        f.setWritable(false, false);
-        f.setReadable(true, true);
-        f.setWritable(true, true);
+    /**
+     * Windows: replace the inherited access list with a single entry for the file's owner, before anything is
+     * written. {@code File.setReadable(false, false)} does nothing there, so it is not relied on.
+     */
+    static void restrictNonPosix(Path p) throws IOException {
+        AclFileAttributeView acl = Files.getFileAttributeView(p, AclFileAttributeView.class);
+        if (acl == null) {
+            java.io.File f = p.toFile();
+            f.setReadable(false, false);
+            f.setWritable(false, false);
+            f.setReadable(true, true);
+            f.setWritable(true, true);
+            return;
+        }
+        AclEntry ownerOnly = AclEntry.newBuilder()
+                .setType(AclEntryType.ALLOW)
+                .setPrincipal(acl.getOwner())
+                .setPermissions(EnumSet.allOf(AclEntryPermission.class))
+                .build();
+        acl.setAcl(Collections.singletonList(ownerOnly));
     }
 }

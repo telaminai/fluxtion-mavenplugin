@@ -104,12 +104,99 @@ public class CompilerCredentialsTest {
     }
 
     @Test
-    public void environmentTokenWithoutUrlLeavesHostToTheBuilder() throws Exception {
+    public void environmentTokenWithoutUrlIsRefused() throws Exception {
+        // without a URL the builder would post the bearer credential to its default host, the RapidAPI gateway
         env.put("FLUXTION_API_TOKEN", ENV_TOKEN_VALUE);
+        try {
+            mojo.execute();
+            Assert.fail("expected refusal");
+        } catch (MojoExecutionException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("FLUXTION_COMPILER_URL"));
+            Assert.assertFalse(e.getMessage().contains(ENV_TOKEN_VALUE));
+        }
+        Assert.assertFalse("the builder must not run", Fluxtion.called);
+        assertNoCredentialLeft();
+    }
+
+    @Test
+    public void storedCredentialIsNeverSentToAnotherCompiler() throws Exception {
+        storeCredential("https://stored.example.com");
+        mojo.compilerUrl = "https://other.example.com";
+        try {
+            mojo.execute();
+            Assert.fail("expected refusal");
+        } catch (MojoExecutionException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("https://stored.example.com"));
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("fluxtion:login"));
+            Assert.assertFalse(e.getMessage().contains(FILE_TOKEN_VALUE));
+        }
+        Assert.assertFalse("the builder must not run", Fluxtion.called);
+        assertNoCredentialLeft();
+    }
+
+    @Test
+    public void storedCredentialAcceptsTheSameOriginSpelledDifferently() throws Exception {
+        storeCredential("https://stored.example.com");
+        mojo.compilerUrl = "https://STORED.example.com:443/";
         mojo.execute();
-        Assert.assertEquals("token", Fluxtion.seenAuth);
-        Assert.assertNull(Fluxtion.seenHost);
-        Assert.assertNull(Fluxtion.seenPort);
+        Assert.assertEquals(FILE_TOKEN_VALUE, Fluxtion.seenToken);
+        Assert.assertEquals("443", Fluxtion.seenPort);
+        assertNoCredentialLeft();
+    }
+
+    @Test
+    public void tokenInParentPomFailsTheBuild() {
+        MavenProject parent = mock(MavenProject.class);
+        Model parentModel = new Model();
+        parentModel.setArtifactId("corp-parent");
+        parentModel.getProperties().setProperty("fluxtion.remote.token", "fxk_pom.leaked");
+        when(parent.getOriginalModel()).thenReturn(parentModel);
+        when(project.getOriginalModel()).thenReturn(new Model());
+        when(project.getParent()).thenReturn(parent);
+        assertRefused();
+    }
+
+    @Test
+    public void tokenInMvnMavenConfigFailsTheBuild() throws Exception {
+        Path root = home.resolve("repo");
+        Path module = root.resolve("module");
+        Files.createDirectories(module);
+        Files.createDirectories(root.resolve(".mvn"));
+        Files.write(root.resolve(".mvn/maven.config"),
+                "-T 1C\n-D fluxtion.remote.token=fxk_pom.leaked\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        when(project.getBasedir()).thenReturn(module.toFile());
+        assertRefused();
+    }
+
+    @Test
+    public void parallelGoalsDoNotOverlapOnTheBuilderProperties() throws Exception {
+        CompilerCredentials.Resolved a = new CompilerCredentials.Resolved(CompilerCredentials.Source.STORED,
+                "fxk_a.secret", CompilerUrl.parse("https://a.example.com"));
+        CompilerCredentials.Resolved b = new CompilerCredentials.Resolved(CompilerCredentials.Source.STORED,
+                "fxk_b.secret", CompilerUrl.parse("https://b.example.com"));
+        Map<String, String> first = CompilerCredentials.apply(a, log);
+        java.util.concurrent.CountDownLatch bApplied = new java.util.concurrent.CountDownLatch(1);
+        String[] bSaw = new String[1];
+        Thread other = new Thread(() -> {
+            Map<String, String> second = CompilerCredentials.apply(b, log);
+            try {
+                bApplied.countDown();
+                bSaw[0] = System.getProperty("fluxtion.remote.token");
+            } finally {
+                CompilerCredentials.restore(second);
+            }
+        });
+        other.start();
+        try {
+            Assert.assertFalse("a second goal must wait while the first one's builder runs",
+                    bApplied.await(300, java.util.concurrent.TimeUnit.MILLISECONDS));
+            Assert.assertEquals("fxk_a.secret", System.getProperty("fluxtion.remote.token"));
+        } finally {
+            CompilerCredentials.restore(first);
+        }
+        other.join(5_000);
+        Assert.assertEquals("fxk_b.secret", bSaw[0]);
+        assertNoCredentialLeft();
     }
 
     @Test

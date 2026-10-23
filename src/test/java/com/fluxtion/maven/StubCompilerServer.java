@@ -45,6 +45,7 @@ final class StubCompilerServer implements AutoCloseable {
     int revokeStatus = 204;
     long expiresIn = 600;
     long interval = 5;
+    String userCode = "WDJB-MJHT";
 
     StubCompilerServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -82,7 +83,7 @@ final class StubCompilerServer implements AutoCloseable {
         requests.add(new Request(method, path, ex.getRequestHeaders().getFirst("Authorization"),
                 ex.getRequestHeaders().getFirst(CompilerAuthClient.CLIENT_HEADER), body));
         if ("POST".equals(method) && "/auth/device/authorize".equals(path)) {
-            reply(ex, 200, "{\"device_code\":\"" + DEVICE_CODE + "\",\"user_code\":\"WDJB-MJHT\","
+            reply(ex, 200, "{\"device_code\":\"" + DEVICE_CODE + "\",\"user_code\":" + Json.quote(userCode) + ","
                     + "\"verification_uri\":\"https://login.example.com/device\","
                     + "\"verification_uri_complete\":\"https://login.example.com/device?user_code=WDJB-MJHT\","
                     + "\"expires_in\":" + expiresIn + ",\"interval\":" + interval + "}");

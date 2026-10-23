@@ -83,7 +83,9 @@ public class LoginLogoutMojoTest {
         Assert.assertTrue(out, out.contains("250"));
         Assert.assertFalse("credential printed", out.contains(StubCompilerServer.TOKEN));
         Assert.assertFalse("device code printed", out.contains(StubCompilerServer.DEVICE_CODE));
-        Assert.assertFalse(Files.exists(home.resolve(".fluxtion/credentials.tmp")));
+        try (java.util.stream.Stream<Path> files = Files.list(store.file().getParent())) {
+            Assert.assertEquals("only the credential is left behind", 1, files.count());
+        }
     }
 
     @Test
@@ -98,6 +100,32 @@ public class LoginLogoutMojoTest {
         }
         Assert.assertTrue("no request in CI", server.requests.isEmpty());
         Assert.assertFalse(store.exists());
+    }
+
+    @Test
+    public void loginRefusesOnCiSystemsThatDoNotSetCi() throws Exception {
+        env.put("JENKINS_URL", "https://jenkins.example.com/");
+        try {
+            login().execute();
+            Assert.fail("expected refusal in CI");
+        } catch (MojoFailureException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("FLUXTION_API_TOKEN"));
+        }
+        Assert.assertTrue("no request in CI", server.requests.isEmpty());
+        Assert.assertFalse(store.exists());
+    }
+
+    @Test
+    public void logoutRevokesOnlyAtTheIssuingService() throws Exception {
+        try (StubCompilerServer elsewhere = new StubCompilerServer()) {
+            store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "acct-42", server.url()));
+            FluxtionLogoutMojo m = logout();
+            m.compilerUrl = elsewhere.url();
+            m.execute();
+            Assert.assertTrue("the credential went to a service that did not issue it", elsewhere.requests.isEmpty());
+            Assert.assertEquals(1, server.requests("DELETE", "/v1/credentials/cred1").size());
+            Assert.assertFalse(store.exists());
+        }
     }
 
     @Test

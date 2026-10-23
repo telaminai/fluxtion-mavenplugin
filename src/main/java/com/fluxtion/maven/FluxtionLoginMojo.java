@@ -25,8 +25,8 @@ import java.util.function.LongSupplier;
 @Mojo(name = "login", requiresProject = false, aggregator = true, threadSafe = true)
 public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
 
-    static final String CI_REFUSAL = "fluxtion:login is interactive and does not run in CI (the CI environment"
-            + " variable is set). For CI, an account administrator creates an automation credential in the"
+    static final String CI_REFUSAL = "fluxtion:login is interactive and does not run in CI (a CI environment"
+            + " variable such as CI or JENKINS_URL is set). For CI, an account administrator creates an automation credential in the"
             + " account's credentials list and stores it as the build's " + CompilerCredentials.ENV_TOKEN
             + " secret; the generation goals read it from there.";
 
@@ -67,9 +67,10 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         getLog().info("    " + auth.userCode);
         getLog().info("");
         AtomicBoolean finished = new AtomicBoolean(false);
-        if (browser && browserAvailable()) {
-            offerBrowser(auth.verificationUriComplete != null ? auth.verificationUriComplete : auth.verificationUri,
-                    finished);
+        URI page = CompilerAuthClient.browsable(
+                auth.verificationUriComplete != null ? auth.verificationUriComplete : auth.verificationUri);
+        if (browser && page != null && browserAvailable()) {
+            offerBrowser(page, finished);
         }
         getLog().info("Waiting for approval (the code expires in " + auth.expiresInSeconds / 60
                 + " minutes; Ctrl+C cancels)...");
@@ -97,7 +98,7 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
             throw new MojoExecutionException("Signed in, but the credential could not be saved to " + store.file()
                     + " (" + e.getMessage() + "); it has been revoked.", e);
         }
-        getLog().info("Signed in to " + url + " as account " + issued.accountId + ".");
+        getLog().info("Signed in to " + url + " as account " + CompilerAuthClient.printable(issued.accountId) + ".");
         getLog().info("Credential saved to " + store.file() + " (readable only by you)."
                 + " mvn fluxtion:logout removes and revokes it.");
 
@@ -112,8 +113,9 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
             Map<String, Object> usage = client.usage(issued.accessToken);
             Object plan = usage.get("plan");
             Object available = usage.get("available");
-            getLog().info("Plan: " + (plan == null ? "unknown" : plan) + "; credits available: "
-                    + (available == null ? "unknown" : available) + ".");
+            getLog().info("Plan: " + (plan == null ? "unknown" : CompilerAuthClient.printable(plan.toString()))
+                    + "; credits available: "
+                    + (available == null ? "unknown" : CompilerAuthClient.printable(available.toString())) + ".");
         } catch (IOException e) {
             getLog().warn("Signed in, but the remaining credits could not be read (" + e.getMessage() + ").");
         }
@@ -130,13 +132,13 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
     }
 
     /** Opens the browser when the person presses Enter; never automatically. Polling continues meanwhile. */
-    private void offerBrowser(String uri, AtomicBoolean finished) {
+    private void offerBrowser(URI uri, AtomicBoolean finished) {
         getLog().info("Press Enter to open this page in your browser.");
         Thread t = new Thread(() -> {
             try {
                 BufferedReader in = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
                 if (in.readLine() != null && !finished.get()) {
-                    Desktop.getDesktop().browse(new URI(uri));
+                    Desktop.getDesktop().browse(uri);
                 }
             } catch (Exception | LinkageError e) {
                 getLog().info("Could not open a browser; open the address above yourself.");
