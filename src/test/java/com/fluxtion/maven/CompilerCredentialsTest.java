@@ -79,6 +79,18 @@ public class CompilerCredentialsTest {
         Assert.assertNull(Fluxtion.seenPort);
     }
 
+    /**
+     * Backward compatibility: with no credential anywhere, a build behaves exactly as before this plugin knew about
+     * compiler accounts, even if FLUXTION_COMPILER_URL holds something that is not a valid compiler URL.
+     */
+    @Test
+    public void withNoCredential_anInvalidCompilerUrlInTheEnvironmentIsIgnored() throws Exception {
+        env.put("FLUXTION_COMPILER_URL", "not a url at all");
+        mojo.execute();
+        Assert.assertTrue(Fluxtion.called);
+        Assert.assertNull("default mode: no auth property", Fluxtion.seenAuth);
+    }
+
     @Test
     public void environmentWinsOverTheStoredFile() throws Exception {
         storeCredential("https://stored.example.com");

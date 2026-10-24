@@ -171,9 +171,11 @@ final class CompilerCredentials {
     /** Applies the precedence: environment, then the stored file, then none. */
     static Resolved resolve(Function<String, String> env, CredentialStore store, String configuredUrl, Log log)
             throws MojoExecutionException {
-        CompilerUrl url = parseUrl(configuredUrl);
+        // the URL is parsed only when a credential will be sent: a build with no credential behaves exactly as before
+        // this plugin knew about compiler accounts, whatever FLUXTION_COMPILER_URL happens to hold
         String envToken = env.apply(ENV_TOKEN);
         if (envToken != null && !envToken.trim().isEmpty()) {
+            CompilerUrl url = parseUrl(configuredUrl);
             if (url == null) {
                 // without a URL the builder would send the bearer credential to its default host, the RapidAPI gateway
                 throw new MojoExecutionException(ENV_TOKEN + " is set but no compiler URL is configured, so there is"
@@ -199,6 +201,7 @@ final class CompilerCredentials {
                 throw new MojoExecutionException("The stored compiler credential at " + store.file() + " does not"
                         + " record which compiler issued it. Run mvn fluxtion:logout and sign in again.");
             }
+            CompilerUrl url = parseUrl(configuredUrl);
             if (url != null && !url.sameOrigin(issuer)) {
                 throw new MojoExecutionException("The stored compiler credential was issued by " + issuer
                         + ", but the compiler URL is " + url + "; it is never sent to another service. Sign in to "
@@ -207,7 +210,7 @@ final class CompilerCredentials {
             }
             return new Resolved(Source.STORED, stored.token, issuer);
         }
-        return new Resolved(Source.NONE, null, url);
+        return new Resolved(Source.NONE, null, null);
     }
 
     private static CompilerUrl parseUrl(String text) throws MojoExecutionException {
