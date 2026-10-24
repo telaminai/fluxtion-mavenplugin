@@ -56,8 +56,13 @@ public class FluxtionLogoutMojo extends AbstractCompilerAccountMojo {
             int status = clientFactory.apply(url).revoke(stored.credentialId, stored.token);
             if (status == 204 || status == 200) {
                 getLog().info("Revoked credential " + stored.credentialId + " on " + url + ".");
-            } else if (status == 404 || status == 401) {
+            } else if (status == 404) {
                 getLog().info("Credential " + stored.credentialId + " was already revoked or expired.");
+            } else if (status == 401) {
+                // a 401 cannot tell a revoked credential from one the request never delivered (an address in front
+                // of the service that drops Authorization): never report it as revoked
+                getLog().warn("The service did not accept credential " + stored.credentialId + " (HTTP 401). It may"
+                        + " already be revoked; if not, revoke it from the account's credentials list.");
             } else {
                 getLog().warn("Could not revoke credential " + stored.credentialId + " (HTTP " + status
                         + "); revoke it from the account's credentials list.");

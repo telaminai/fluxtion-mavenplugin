@@ -162,6 +162,16 @@ public class LoginLogoutMojoTest {
     }
 
     @Test
+    public void a401OnRevokeIsNeverReportedAsRevoked() throws Exception {
+        server.revokeStatus = 401;
+        store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "acct-42", server.url()));
+        logout().execute();
+        Assert.assertFalse(store.exists());
+        Assert.assertFalse(log.all(), log.all().contains("already revoked or expired"));
+        Assert.assertTrue(log.all(), log.all().contains("revoke it from the account's credentials list"));
+    }
+
+    @Test
     public void logoutWhenUnreachableStillDeletes() throws Exception {
         String url = server.url();
         server.close();
