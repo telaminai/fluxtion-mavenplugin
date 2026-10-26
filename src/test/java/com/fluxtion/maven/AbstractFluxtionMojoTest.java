@@ -39,6 +39,31 @@ public class AbstractFluxtionMojoTest {
         Assert.assertEquals(absolutePath, classpathProperty);
     }
 
+    /** What ManagedAuthTransport.explain (fluxtion-compiler PR #121) throws for a 403 CAPABILITY_EXCEEDED. */
+    private static final String CAPABILITY_REFUSAL = "Your plan does not allow this graph: your plan does not allow"
+            + " this request (maxNodes: 120 > 20 (free)); a higher plan allows more [HTTP 403, request fx-1]";
+
+    @Test
+    public void aCompilerRefusalIsTheBuildFailureMessage() {
+        // as it arrives: the generator method invoked reflectively, the builder wrapping the client's IOException
+        Exception failure = new java.lang.reflect.InvocationTargetException(
+                new RuntimeException(new java.io.IOException(CAPABILITY_REFUSAL)));
+        MojoExecutionException e = AbstractFluxtionMojo.generationFailure("problem setting building fluxtion class loader",
+                failure);
+        Assert.assertEquals("The Fluxtion compiler refused this build. " + CAPABILITY_REFUSAL, e.getMessage());
+        Assert.assertTrue(e.getMessage(), e.getMessage().contains("maxNodes: 120 > 20 (free)"));
+        Assert.assertSame(failure, e.getCause());
+    }
+
+    @Test
+    public void otherFailuresKeepTheirMessage() {
+        Exception failure = new java.lang.reflect.InvocationTargetException(new IllegalStateException("no builders"));
+        Assert.assertEquals("problem setting building fluxtion class loader",
+                AbstractFluxtionMojo.generationFailure("problem setting building fluxtion class loader", failure)
+                        .getMessage());
+        Assert.assertNull(AbstractFluxtionMojo.compilerRefusal(null));
+    }
+
     private static class ConcreteFluxtionMojo extends AbstractFluxtionMojo {
         @Override
         public void execute() throws MojoExecutionException {

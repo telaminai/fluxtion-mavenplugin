@@ -159,8 +159,17 @@ mvn fluxtion:login -Dfluxtion.compilerUrl=https://compiler.example.com
 
 The goal prints a short code and a verification address. Open the address, enter the code and approve. If a
 desktop is available, pressing Enter opens the page in your browser; it never opens one by itself. When you
-approve, the plugin stores the credential in `~/.fluxtion/credentials` and prints your account and the credits you
-have left. The code expires after the time shown, and declining in the browser ends the attempt.
+approve, the plugin stores the credential in `~/.fluxtion/credentials` and prints your account, your plan, the
+compile credits and interpret credits you have left, and the plan's limits (for example
+`Plan: Free; compile credits available: 250; interpret credits available: 40.` and
+`Plan limits: 20 nodes, 5 event types, targets Java.`). A compiler from before plans reports only the compile
+credits, and the plugin prints only those. The code expires after the time shown, and declining in the browser ends
+the attempt.
+
+A build the compiler refuses fails with the compiler's reason as the failure message. For a graph beyond your plan
+that is, for example, `The Fluxtion compiler refused this build. Your plan does not allow this graph: ... (maxNodes:
+120 > 20 (free)); a higher plan allows more [HTTP 403, request ...]`. Nothing is charged for a refused build. To move
+to a higher plan, contact Telamin; there is no online purchase.
 
 On macOS and Linux the file is created owner-only (`rw-------`, in an `rwx------` directory) before anything is
 written to it. Windows has no POSIX permissions, so the plugin replaces the file's access list with a single entry for you

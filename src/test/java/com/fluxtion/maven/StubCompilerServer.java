@@ -43,6 +43,20 @@ final class StubCompilerServer implements AutoCloseable {
     /** Responses for successive token polls: "status body". The last one repeats. */
     final Deque<String[]> tokenReplies = new ArrayDeque<>();
     int revokeStatus = 204;
+    /** What {@code GET /v1/usage} answers: by default a compiler from before credit kinds and plans. */
+    volatile String usageBody = OLD_USAGE;
+
+    static final String OLD_USAGE = "{\"accountId\":\"acct-42\",\"plan\":\"free\",\"active\":true,\"available\":250,"
+            + "\"reserved\":0,\"limits\":{\"a\":[1,2.5,null]}}";
+    /** A compiler with credit kinds and plans (fluxtion-compiler PR #121). */
+    static final String PLANS_USAGE = "{\"accountId\":\"acct-42\",\"plan\":\"free\",\"active\":true,\"available\":250,"
+            + "\"reserved\":0,\"consumed\":5,\"released\":0,\"generations\":5,\"failures\":0,"
+            + "\"kinds\":{\"compile\":{\"available\":250,\"reserved\":0,\"consumed\":5,\"released\":0,\"settled\":5,\"failures\":0},"
+            + "\"interpret\":{\"available\":40,\"reserved\":1,\"consumed\":9,\"released\":0,\"settled\":9,\"failures\":0}},"
+            + "\"currentPeriod\":\"2026-10\",\"nextReset\":null,\"buckets\":[],"
+            + "\"capabilities\":{\"plan\":\"free\",\"maxNodes\":20,\"maxEventTypes\":5,\"targets\":[\"java\"],"
+            + "\"wasm\":false,\"assurance\":\"none\",\"compilePerMinute\":10,\"interpretPerMinute\":30},"
+            + "\"policyVersion\":\"p1\",\"as_of_sequence\":12}";
     long expiresIn = 600;
     long interval = 5;
     String userCode = "WDJB-MJHT";
@@ -96,8 +110,7 @@ final class StubCompilerServer implements AutoCloseable {
             reply(ex, Integer.parseInt(r[0]), r[1]);
         } else if ("GET".equals(method) && "/v1/usage".equals(path)) {
             if (("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization"))) {
-                reply(ex, 200, "{\"accountId\":\"acct-42\",\"plan\":\"free\",\"active\":true,\"available\":250,"
-                        + "\"reserved\":0,\"limits\":{\"a\":[1,2.5,null]}}");
+                reply(ex, 200, usageBody);
             } else {
                 reply(ex, 401, "{\"error\":\"AUTH_REQUIRED\",\"message\":\"sign in to continue\"}");
             }

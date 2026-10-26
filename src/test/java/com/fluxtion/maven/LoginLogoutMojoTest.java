@@ -60,6 +60,26 @@ public class LoginLogoutMojoTest {
     }
 
     @Test
+    public void loginPrintsThePlanAndTheCompileAndInterpretCredits() throws Exception {
+        server.usageBody = StubCompilerServer.PLANS_USAGE;
+        server.tokenReply(200, StubCompilerServer.success());
+        login().execute();
+        String out = log.all();
+        Assert.assertTrue(out, out.contains("Plan: Free; compile credits available: 250; interpret credits available: 40."));
+        Assert.assertTrue(out, out.contains("Plan limits: 20 nodes, 5 event types, targets Java."));
+    }
+
+    @Test
+    public void loginAgainstAnOlderCompilerPrintsTheCompileCreditsOnly() throws Exception {
+        server.tokenReply(200, StubCompilerServer.success());
+        login().execute();
+        String out = log.all();
+        Assert.assertTrue(out, out.contains("Plan: Free; compile credits available: 250."));
+        Assert.assertFalse(out, out.contains("interpret"));
+        Assert.assertFalse(out, out.contains("Plan limits"));
+    }
+
+    @Test
     public void loginStoresAProtectedCredential() throws Exception {
         server.tokenReply(400, "{\"error\":\"authorization_pending\"}");
         server.tokenReply(200, StubCompilerServer.success());
