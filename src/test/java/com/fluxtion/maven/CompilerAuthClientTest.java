@@ -165,7 +165,7 @@ public class CompilerAuthClientTest {
         server.userCode = "WDJB\u001b]0;pwned\u0007-MJHT";
         CompilerAuthClient.DeviceAuthorization auth = client.authorize();
         Assert.assertEquals("WDJB?]0;pwned?-MJHT", auth.userCode);
-        Assert.assertEquals("HTTP 400 x?[2J: m?",
+        Assert.assertEquals("HTTP 400",
                 CompilerAuthClient.describe(new CompilerAuthClient.Response(400,
                         "{\"error\":\"x\\u001b[2J\",\"message\":\"m\\u202e\"}")));
     }

@@ -94,9 +94,12 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
                     url.toString()));
         } catch (IOException e) {
             // the credential is live but unsaved: revoke it rather than leave it orphaned
-            revokeQuietly(client, issued.credentialId, issued.accessToken);
+            boolean revoked = revokeQuietly(client, issued.credentialId, issued.accessToken);
             throw new MojoExecutionException("Signed in, but the credential could not be saved to " + store.file()
-                    + " (" + e.getMessage() + "); it has been revoked.", e);
+                    + " (" + e.getMessage() + "); " + (revoked ? "it has been revoked or is already absent."
+                    : "revocation is unconfirmed. Revoke credential "
+                    + (issued.credentialId == null ? "(id unavailable)" : CompilerAuthClient.printable(issued.credentialId))
+                    + " from the account's credentials list."), e);
         }
         getLog().info("Signed in to " + url + " as account " + CompilerAuthClient.printable(issued.accountId) + ".");
         getLog().info("Credential saved to " + store.file() + " (readable only by you)."
@@ -148,14 +151,18 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         t.start();
     }
 
-    private void revokeQuietly(CompilerAuthClient client, String credentialId, String token) {
-        if (credentialId == null) return;
+    private boolean revokeQuietly(CompilerAuthClient client, String credentialId, String token) {
+        if (credentialId == null) return false;
         try {
-            client.revoke(credentialId, token);
+            int status = client.revoke(credentialId, token);
+            if (status == 200 || status == 204 || status == 404) return true;
+            getLog().warn("Could not confirm revocation of credential " + CompilerAuthClient.printable(credentialId)
+                    + " (HTTP " + status + "); revoke it from the account's credentials list.");
         } catch (IOException e) {
-            getLog().warn("Could not revoke credential " + credentialId + " (" + e.getMessage()
-                    + "); revoke it from the account's credentials list.");
+            getLog().warn("Could not confirm revocation of credential " + CompilerAuthClient.printable(credentialId)
+                    + " after a connection failure; revoke it from the account's credentials list.");
         }
+        return false;
     }
 
     private CredentialStore.Stored readQuietly(CredentialStore store) {
