@@ -128,6 +128,26 @@ final class CompilerAuthClient {
     }
 
     /**
+     * The name this credential carries in the account's device list: "Maven on <host>", limited to what the service
+     * keeps ({@code [A-Za-z0-9 ._:-]}, at most 64 characters). The service names anything else "device".
+     */
+    static String deviceName() {
+        String host;
+        try {
+            host = java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            host = "";
+        }
+        return deviceName(host);
+    }
+
+    static String deviceName(String host) {
+        String h = host == null ? "" : host.replaceAll("[^A-Za-z0-9._:-]", "");
+        String n = h.isEmpty() ? "Maven" : "Maven on " + h;
+        return n.length() > 64 ? n.substring(0, 64) : n;
+    }
+
+    /**
      * Polls {@code POST /auth/device/token} until the person approves, refuses, or the code expires. Honours
      * {@code interval}, adds {@value #SLOW_DOWN_SECONDS}s on {@code slow_down}, stops at {@code expires_in}.
      */
@@ -135,7 +155,7 @@ final class CompilerAuthClient {
             throws IOException, DeviceFlowException, InterruptedException {
         long deadline = clockMillis.getAsLong() + auth.expiresInSeconds * 1000L;
         long interval = auth.intervalSeconds;
-        String body = "{\"device_code\":" + Json.quote(auth.deviceCode) + "}";
+        String body = "{\"device_code\":" + Json.quote(auth.deviceCode) + ",\"device_name\":" + Json.quote(deviceName()) + "}";
         int failures = 0;
         while (true) {
             if (clockMillis.getAsLong() >= deadline) {

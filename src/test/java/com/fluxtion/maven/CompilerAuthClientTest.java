@@ -53,7 +53,8 @@ public class CompilerAuthClientTest {
         List<StubCompilerServer.Request> polls = server.requests("POST", "/auth/device/token");
         Assert.assertEquals(3, polls.size());
         for (StubCompilerServer.Request r : polls) {
-            Assert.assertEquals("{\"device_code\":\"" + StubCompilerServer.DEVICE_CODE + "\"}", r.body);
+            Assert.assertEquals("{\"device_code\":\"" + StubCompilerServer.DEVICE_CODE + "\",\"device_name\":\""
+                    + CompilerAuthClient.deviceName() + "\"}", r.body);
             Assert.assertNull("no credential is sent while polling", r.authorization);
             Assert.assertEquals(CompilerAuthClient.CLIENT_NAME, r.clientHeader);
         }
@@ -180,5 +181,15 @@ public class CompilerAuthClientTest {
             // refused cleanly; StackOverflowError would escape as an Error
         }
         Assert.assertEquals(1L, ((java.util.List<?>) Json.object("{\"a\":[[1]]}").get("a")).size());
+    }
+
+    @Test
+    public void theDeviceNameIsReadableAndKeptWithinWhatTheServiceAccepts() {
+        // found on staging: three devices on one account were all named "device"
+        Assert.assertEquals("Maven on ci-runner.local", CompilerAuthClient.deviceName("ci-runner.local"));
+        Assert.assertEquals("Maven on bad", CompilerAuthClient.deviceName("b<a>d"));
+        Assert.assertEquals("Maven", CompilerAuthClient.deviceName(""));
+        Assert.assertEquals(64, CompilerAuthClient.deviceName("h".repeat(100)).length());
+        Assert.assertTrue(CompilerAuthClient.deviceName().matches("[A-Za-z0-9 ._:-]{1,64}"));
     }
 }
