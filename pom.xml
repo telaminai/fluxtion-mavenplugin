@@ -153,6 +153,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
                     <version>2.22.1</version>
                     <configuration>
                         <argLine>-Dfile.encoding=UTF-8</argLine>
+                        <systemPropertyVariables>
+                            <!-- tests never read or write the developer's real compiler credential -->
+                            <fluxtion.credentialsFile>${project.build.directory}/test-home/credentials</fluxtion.credentialsFile>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>

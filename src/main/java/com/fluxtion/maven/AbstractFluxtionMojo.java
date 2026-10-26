@@ -2,6 +2,7 @@ package com.fluxtion.maven;
 
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.plugin.AbstractMojo;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
@@ -12,6 +13,8 @@ import java.net.URLClassLoader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 
 public abstract class AbstractFluxtionMojo extends AbstractMojo {
 
@@ -21,6 +24,48 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
      */
     @Parameter(defaultValue = "${project}", required = true, readonly = true)
     protected MavenProject project;
+
+    /**
+     * The compiler service's base URL, e.g. {@code https://compiler.example.com}. Not a secret, so it may be set in
+     * the POM, with {@code -Dfluxtion.compilerUrl}, or with the {@code FLUXTION_COMPILER_URL} environment variable.
+     * Defaults to the URL stored by {@code fluxtion:login} when signed in, otherwise the builder's own configuration.
+     */
+    @Parameter(property = "fluxtion.compilerUrl")
+    protected String compilerUrl;
+
+    /** Refused: a credential is never accepted from a POM. Present only so the build fails loudly if one is set. */
+    @Parameter
+    protected String token;
+
+    /** Refused: a credential is never accepted from a POM. Present only so the build fails loudly if one is set. */
+    @Parameter
+    protected String apiToken;
+
+    /** Refused: a credential is never accepted from a POM. Present only so the build fails loudly if one is set. */
+    @Parameter
+    protected String credential;
+
+    /** Environment lookup; replaced in tests. */
+    Function<String, String> env = System::getenv;
+
+    /** Where {@code fluxtion:login} stores the credential; null means the default location. */
+    CredentialStore credentialStore;
+
+    CredentialStore credentialStore() {
+        return credentialStore != null ? credentialStore : CredentialStore.defaultStore();
+    }
+
+    /**
+     * Chooses the compiler credential (environment, then the stored login, then none) and sets the builder's
+     * system properties for it. Returns what to pass to {@link CompilerCredentials#restore(Map)} once the builder
+     * returns. With no credential nothing is set and the builder behaves exactly as before (RapidAPI key mode).
+     */
+    protected Map<String, String> applyCompilerAuth() throws MojoExecutionException {
+        CompilerCredentials.refusePomCredential(project, token, apiToken, credential);
+        CompilerCredentials.Resolved resolved = CompilerCredentials.resolve(env, credentialStore(),
+                CompilerCredentials.configuredUrl(compilerUrl, env), getLog());
+        return CompilerCredentials.apply(resolved, getLog());
+    }
 
     protected URLClassLoader buildFluxtionClassLoader() throws MalformedURLException, DependencyResolutionRequiredException {
         List<String> elements = project.getCompileClasspathElements();
