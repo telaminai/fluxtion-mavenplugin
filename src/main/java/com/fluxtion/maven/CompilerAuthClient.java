@@ -208,7 +208,7 @@ final class CompilerAuthClient {
                 throw expired();
             }
             throw new DeviceFlowException(DeviceFlowException.Reason.FAILED,
-                    "sign-in failed: " + (error == null ? "HTTP " + r.status : printable(error)));
+                    "sign-in failed: HTTP " + r.status + "; run mvn fluxtion:login again to retry");
         }
     }
 
@@ -280,16 +280,9 @@ final class CompilerAuthClient {
         }
     }
 
-    /** Status and error code/message only: a response body is never echoed whole. */
+    /** Do not echo server error fields: even a single field can contain a reflected credential. */
     static String describe(Response r) {
-        try {
-            Map<String, Object> m = Json.object(r.body);
-            String code = printable(Json.str(m, "error"));
-            String message = printable(Json.str(m, "message"));
-            return "HTTP " + r.status + (code == null ? "" : " " + code) + (message == null ? "" : ": " + message);
-        } catch (IllegalArgumentException e) {
-            return "HTTP " + r.status;
-        }
+        return "HTTP " + r.status;
     }
 
     Response send(String method, String path, String jsonBody, String bearer) throws IOException {
