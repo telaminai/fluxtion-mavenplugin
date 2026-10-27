@@ -66,7 +66,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
                 }
             } catch (Exception exception) {
                 getLog().error(exception);
-                throw new MojoExecutionException("problem setting building fluxtion class loader", exception);
+                throw generationFailure("problem setting building fluxtion class loader", exception);
             } finally {
                 CompilerCredentials.restore(previousAuth);
             }

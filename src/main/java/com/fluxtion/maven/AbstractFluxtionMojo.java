@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 public abstract class AbstractFluxtionMojo extends AbstractMojo {
 
@@ -65,6 +66,37 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
         CompilerCredentials.Resolved resolved = CompilerCredentials.resolve(env, credentialStore(),
                 CompilerCredentials.configuredUrl(compilerUrl, env), getLog());
         return CompilerCredentials.apply(resolved, getLog());
+    }
+
+    /** The suffix the builder's managed-auth client puts on a compiler refusal: {@code [HTTP 403, request fx-…]}. */
+    private static final Pattern COMPILER_REFUSAL = Pattern.compile("\\[HTTP \\d{3}, request [^\\]]*]");
+
+    /**
+     * The compiler's refusal as the builder worded it ({@code ManagedAuthTransport.explain}, e.g. "Your plan does not
+     * allow this graph: ... (maxNodes: 120 > 20 (free)); a higher plan allows more [HTTP 403, request fx-1]"),
+     * found anywhere in the cause chain; the innermost such message, so a wrapper's {@code toString} prefix is not
+     * repeated. Null when the failure is not a compiler refusal. Control characters are replaced.
+     */
+    static String compilerRefusal(Throwable failure) {
+        String found = null;
+        int depth = 0;
+        for (Throwable t = failure; t != null && depth++ < 32; t = t.getCause()) {
+            String m = t.getMessage();
+            if (m != null && COMPILER_REFUSAL.matcher(m).find()) found = m;
+            if (t.getCause() == t) break;
+        }
+        return found == null ? null : CompilerAuthClient.printable(found);
+    }
+
+    /**
+     * The build's failure: the compiler's own refusal as the message when there is one (a plan limit, a used-up
+     * allowance, a refused credential), so the reason is the line Maven prints rather than buried in a stack trace;
+     * otherwise {@code fallback}, as before.
+     */
+    static MojoExecutionException generationFailure(String fallback, Exception failure) {
+        String refusal = compilerRefusal(failure);
+        return new MojoExecutionException(refusal == null ? fallback
+                : "The Fluxtion compiler refused this build. " + refusal, failure);
     }
 
     protected URLClassLoader buildFluxtionClassLoader() throws MalformedURLException, DependencyResolutionRequiredException {

@@ -114,11 +114,9 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
 
         try {
             Map<String, Object> usage = client.usage(issued.accessToken);
-            Object plan = usage.get("plan");
-            Object available = usage.get("available");
-            getLog().info("Plan: " + (plan == null ? "unknown" : CompilerAuthClient.printable(plan.toString()))
-                    + "; credits available: "
-                    + (available == null ? "unknown" : CompilerAuthClient.printable(available.toString())) + ".");
+            for (String line : UsageSummary.lines(usage)) {
+                getLog().info(line);
+            }
         } catch (IOException e) {
             getLog().warn("Signed in, but the remaining credits could not be read (" + e.getMessage() + ").");
         }
