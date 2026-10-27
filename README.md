@@ -73,9 +73,9 @@ Scans compiled project classes for Fluxtion builder definitions and generates ev
 
 ```xml
 <plugin>
-    <groupId>com.fluxtion.dataflow</groupId>
-    <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.2.1</version>
+    <groupId>com.telamin.fluxtion</groupId>
+    <artifactId>fluxtion-maven-plugin</artifactId>
+    <version>1.3.1</version>
     <executions>
         <execution>
             <goals>
@@ -95,9 +95,9 @@ Generates a Fluxtion event processor from a Spring context definition.
 
 ```xml
 <plugin>
-    <groupId>com.fluxtion.dataflow</groupId>
-    <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.2.1</version>
+    <groupId>com.telamin.fluxtion</groupId>
+    <artifactId>fluxtion-maven-plugin</artifactId>
+    <version>1.3.1</version>
     <executions>
         <execution>
             <goals>
@@ -121,9 +121,9 @@ Generates event processors from YAML configuration files.
 
 ```xml
 <plugin>
-    <groupId>com.fluxtion.dataflow</groupId>
-    <artifactId>dataflow-maven-plugin</artifactId>
-    <version>1.2.1</version>
+    <groupId>com.telamin.fluxtion</groupId>
+    <artifactId>fluxtion-maven-plugin</artifactId>
+    <version>1.3.1</version>
     <executions>
         <execution>
             <goals>
@@ -146,6 +146,9 @@ The generation goals can use a Fluxtion compiler account instead of a RapidAPI k
 not a secret, so it can go in the POM (`<compilerUrl>` in the plugin configuration), on the command line
 (`-Dfluxtion.compilerUrl=...`) or in the `FLUXTION_COMPILER_URL` environment variable. The examples use the
 placeholder `https://compiler.example.com`.
+
+Compiler accounts need plugin 1.3.1 or later and `com.telamin.fluxtion:fluxtion-builder` **1.0.82 or later** on the
+project's build classpath. An older builder ignores the credential and uses the RapidAPI key.
 
 **A credential is never accepted from a POM.** If a `<token>`, `<apiToken>` or `<credential>` parameter, or a
 credential property such as `fluxtion.remote.token` or `FLUXTION_API_TOKEN`, appears in the POM or one of its
