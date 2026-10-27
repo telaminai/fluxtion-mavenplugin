@@ -54,7 +54,8 @@ final class StubCompilerServer implements AutoCloseable {
             + "\"kinds\":{\"compile\":{\"available\":250,\"reserved\":0,\"consumed\":5,\"released\":0,\"settled\":5,\"failures\":0},"
             + "\"interpret\":{\"available\":40,\"reserved\":1,\"consumed\":9,\"released\":0,\"settled\":9,\"failures\":0}},"
             + "\"currentPeriod\":\"2026-10\",\"nextReset\":null,\"buckets\":[],"
-            + "\"capabilities\":{\"plan\":\"free\",\"maxNodes\":20,\"maxEventTypes\":5,\"targets\":[\"java\"],"
+            + "\"capabilities\":{\"plan\":\"free\",\"maxNodes\":20,\"maxInputs\":6,"
+            + "\"maxExportedInterfaces\":1,\"maxEventTypes\":6,\"targets\":[\"java\"],"
             + "\"wasm\":false,\"assurance\":\"none\",\"compilePerMinute\":10,\"interpretPerMinute\":30},"
             + "\"policyVersion\":\"p1\",\"as_of_sequence\":12}";
     long expiresIn = 600;

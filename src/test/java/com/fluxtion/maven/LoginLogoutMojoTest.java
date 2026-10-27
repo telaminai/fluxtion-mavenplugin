@@ -66,7 +66,8 @@ public class LoginLogoutMojoTest {
         login().execute();
         String out = log.all();
         Assert.assertTrue(out, out.contains("Plan: Free; compile credits available: 250; interpret credits available: 40."));
-        Assert.assertTrue(out, out.contains("Plan limits: 20 nodes, 5 event types, targets Java."));
+        Assert.assertTrue(out, out.contains("Plan limits: 20 nodes, 6 inputs (event types + exported methods), 1 exported interface,"
+                + " targets Java."));
     }
 
     @Test

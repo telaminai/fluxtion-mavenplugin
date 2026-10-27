@@ -10,6 +10,10 @@ import java.util.Map;
  * the plan's limits from {@code capabilities}. A compiler from before credit kinds and plans sends neither
  * {@code kinds} nor {@code capabilities}; the interpret figure and the limits line are then left out, never guessed.
  *
+ * <p>The inputs limit is {@code maxInputs}: event types plus the methods of exported interfaces, each method one
+ * input. A compiler from before that limit states only {@code maxEventTypes}, which is then printed as the inputs
+ * limit; the two are never printed side by side.</p>
+ *
  * <p>Every server-supplied value passes through {@link CompilerAuthClient#printable(String)}.</p>
  */
 final class UsageSummary {
@@ -32,8 +36,12 @@ final class UsageSummary {
             List<String> limits = new ArrayList<>();
             String nodes = number(caps.get("maxNodes"));
             if (nodes != null) limits.add(nodes + " nodes");
-            String events = number(caps.get("maxEventTypes"));
-            if (events != null) limits.add(events + " event types");
+            String inputs = number(caps.get("maxInputs"));
+            if (inputs == null) inputs = number(caps.get("maxEventTypes")); // a compiler before inputs: its one limit
+            if (inputs != null) limits.add(inputs + " inputs (event types + exported methods)");
+            String interfaces = number(caps.get("maxExportedInterfaces"));
+            if (interfaces != null)
+                limits.add(interfaces + ("1".equals(interfaces) ? " exported interface" : " exported interfaces"));
             Object targets = caps.get("targets");
             if (targets instanceof List && !((List<?>) targets).isEmpty()) {
                 List<String> names = new ArrayList<>();

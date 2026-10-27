@@ -162,13 +162,16 @@ desktop is available, pressing Enter opens the page in your browser; it never op
 approve, the plugin stores the credential in `~/.fluxtion/credentials` and prints your account, your plan, the
 compile credits and interpret credits you have left, and the plan's limits (for example
 `Plan: Free; compile credits available: 250; interpret credits available: 40.` and
-`Plan limits: 20 nodes, 5 event types, targets Java.`). A compiler from before plans reports only the compile
-credits, and the plugin prints only those. The code expires after the time shown, and declining in the browser ends
+`Plan limits: 20 nodes, 6 inputs (event types + exported methods), 1 exported interface, targets Java.`). Inputs
+are the graph's event types plus the methods of the interfaces it exports, each method counting as one input. A
+compiler from before plans reports only the compile credits, and the plugin prints only those; one from before the
+inputs limit reports its event-type limit, which is printed as the inputs limit. The code expires after the time shown, and declining in the browser ends
 the attempt.
 
 A build the compiler refuses fails with the compiler's reason as the failure message. For a graph beyond your plan
 that is, for example, `The Fluxtion compiler refused this build. Your plan does not allow this graph: ... (maxNodes:
-120 > 20 (free)); a higher plan allows more [HTTP 403, request ...]`. Nothing is charged for a refused build. To move
+120 > 20 (free)); a higher plan allows more [HTTP 403, request ...]`; the limit named may also be `maxInputs` (for
+example `maxInputs: 7 > 6 (free)`) or `maxExportedInterfaces`. Nothing is charged for a refused build. To move
 to a higher plan, contact Telamin; there is no online purchase.
 
 On macOS and Linux the file is created owner-only (`rw-------`, in an `rwx------` directory) before anything is
