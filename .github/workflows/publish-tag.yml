@@ -1,0 +1,45 @@
+name: Publish an existing tag to Maven Central
+
+# One-off recovery: publishes the exact source of an existing release tag.
+# No release:prepare, no new commits or tags. Dispatch from main:
+#   gh workflow run publish-tag.yml -R telaminai/fluxtion-mavenplugin --ref main -f tag=v1.3.1
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish (for example v1.3.1)'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install gpg secret key
+        run: |
+          cat <(echo -e "${{ secrets.MAVEN_GPG_PRIVATE_KEY }}") | gpg --batch --import
+          gpg --list-secret-keys --keyid-format LONG
+
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+
+      - name: Set up JDK 21 and Central credentials
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'adopt'
+          server-id: central
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_CENTRAL_TOKEN
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      # ./mvnw pins Maven 3.9.9 (.mvn/wrapper at the tag). With 3.9.x, the tag's
+      # central-publishing 0.9.0 builds a clean bundle (verified locally); the
+      # runner's Maven 3.10.0 does not.
+      - name: Publish ${{ inputs.tag }}
+        run: ./mvnw -P release -B deploy
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_CENTRAL_TOKEN: ${{ secrets.OSSRH_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
