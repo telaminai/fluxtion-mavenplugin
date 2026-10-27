@@ -18,10 +18,16 @@ public class UsageSummaryTest {
     }
 
     @Test
-    public void aCompilerBeforeTheInputsLimitHasItsEventTypeLimitPrintedAsInputs_neverBoth() {
+    public void aCompilerBeforeTheInputsLimitHasItsEventTypeLimitPrintedAsEventTypes_neverBoth() {
+        // deliberately changed (re-check 2026-10-27): an older compiler's maxEventTypes limits event types only, so it
+        // is no longer printed as inputs (event types + exported methods)
         List<String> lines = UsageSummary.lines(Json.object("{\"plan\":\"free\",\"available\":3,"
                 + "\"capabilities\":{\"plan\":\"free\",\"maxNodes\":20,\"maxEventTypes\":5,\"targets\":[\"java\"]}}"));
-        Assert.assertEquals("Plan limits: 20 nodes, 5 inputs (event types + exported methods), targets Java.", lines.get(1));
+        Assert.assertEquals("Plan limits: 20 nodes, 5 event types, targets Java.", lines.get(1));
+        Assert.assertFalse(lines.get(1), lines.get(1).contains("exported"));
+        lines = UsageSummary.lines(Json.object("{\"plan\":\"free\",\"available\":3,"
+                + "\"capabilities\":{\"plan\":\"free\",\"maxEventTypes\":1}}"));
+        Assert.assertEquals("Plan limits: 1 event type.", lines.get(1));
         lines = UsageSummary.lines(Json.object("{\"plan\":\"free\",\"available\":3,"
                 + "\"capabilities\":{\"plan\":\"free\",\"maxNodes\":20,\"maxInputs\":6,\"maxEventTypes\":9}}"));
         Assert.assertEquals("Plan limits: 20 nodes, 6 inputs (event types + exported methods).", lines.get(1));

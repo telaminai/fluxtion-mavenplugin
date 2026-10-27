@@ -11,8 +11,10 @@ import java.util.Map;
  * {@code kinds} nor {@code capabilities}; the interpret figure and the limits line are then left out, never guessed.
  *
  * <p>The inputs limit is {@code maxInputs}: event types plus the methods of exported interfaces, each method one
- * input. A compiler from before that limit states only {@code maxEventTypes}, which is then printed as the inputs
- * limit; the two are never printed side by side.</p>
+ * input. A compiler from before that limit states only {@code maxEventTypes}, which limits event types alone and
+ * is printed as such ({@code 5 event types}), with nothing said about exported methods. The current compiler also
+ * sends {@code maxEventTypes} as a deprecated alias equal to {@code maxInputs}; whenever {@code maxInputs} is present
+ * it wins and the two are never printed side by side.</p>
  *
  * <p>Every server-supplied value passes through {@link CompilerAuthClient#printable(String)}.</p>
  */
@@ -37,8 +39,13 @@ final class UsageSummary {
             String nodes = number(caps.get("maxNodes"));
             if (nodes != null) limits.add(nodes + " nodes");
             String inputs = number(caps.get("maxInputs"));
-            if (inputs == null) inputs = number(caps.get("maxEventTypes")); // a compiler before inputs: its one limit
-            if (inputs != null) limits.add(inputs + " inputs (event types + exported methods)");
+            if (inputs != null) {
+                limits.add(inputs + " inputs (event types + exported methods)");
+            } else {
+                // a compiler before the inputs limit: its maxEventTypes counts event types only
+                String eventTypes = number(caps.get("maxEventTypes"));
+                if (eventTypes != null) limits.add(eventTypes + ("1".equals(eventTypes) ? " event type" : " event types"));
+            }
             String interfaces = number(caps.get("maxExportedInterfaces"));
             if (interfaces != null)
                 limits.add(interfaces + ("1".equals(interfaces) ? " exported interface" : " exported interfaces"));

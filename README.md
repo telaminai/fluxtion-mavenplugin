@@ -165,7 +165,8 @@ compile credits and interpret credits you have left, and the plan's limits (for 
 `Plan limits: 20 nodes, 6 inputs (event types + exported methods), 1 exported interface, targets Java.`). Inputs
 are the graph's event types plus the methods of the interfaces it exports, each method counting as one input. A
 compiler from before plans reports only the compile credits, and the plugin prints only those; one from before the
-inputs limit reports its event-type limit, which is printed as the inputs limit. The code expires after the time shown, and declining in the browser ends
+inputs limit reports only its event-type limit, which is printed as that (`5 event types`), with nothing said about
+exported methods. The code expires after the time shown, and declining in the browser ends
 the attempt.
 
 A build the compiler refuses fails with the compiler's reason as the failure message. For a graph beyond your plan
