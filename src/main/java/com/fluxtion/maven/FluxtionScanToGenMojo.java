@@ -33,7 +33,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
 
     /**
      * Ensure mode: reuse the committed processor when the compile request is unchanged, otherwise regenerate
-     * (signed in) or fail with FLX-1021. Needs a builder that reads the {@code FLUXTION.ENSURE.*} properties; an
+     * (signed in) or fail with FLX-1022. Needs a builder that reads the {@code FLUXTION.ENSURE.*} properties; an
      * older builder ignores them and generates as before.
      */
     @Parameter(property = "fluxtion.ensureProcessor", defaultValue = "false")

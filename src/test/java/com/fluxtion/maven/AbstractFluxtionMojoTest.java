@@ -64,8 +64,8 @@ public class AbstractFluxtionMojoTest {
         Assert.assertNull(AbstractFluxtionMojo.compilerRefusal(null));
     }
 
-    /** Shaped like the builder's FLX-1021 ensure-mode refusal as the scan entry point wraps it (DiagnosticBuildException). */
-    static final String STALE_PROCESSOR = "FLX-1021  ERROR  Committed processor 'com.acme.DemoProcessor' does not"
+    /** Shaped like the builder's FLX-1022 ensure-mode refusal as the scan entry point wraps it (DiagnosticBuildException). */
+    static final String STALE_PROCESSOR = "FLX-1022  ERROR  Committed processor 'com.acme.DemoProcessor' does not"
             + " match the current compile request (request-changed)  (details above; sidecar written to target/x.json)";
 
     /** A fabricated diagnostic carrier: the builder's exceptions are not on the plugin's classpath, only their shape. */
@@ -84,8 +84,8 @@ public class AbstractFluxtionMojoTest {
 
     /** As it arrives from the scan: reflective invocation, the wrapping carrier, the legacy-prose carrier below it. */
     static Exception staleProcessorFailure() {
-        return new java.lang.reflect.InvocationTargetException(new FabricatedDiagnosticException("FLX-1021",
-                STALE_PROCESSOR, new FabricatedDiagnosticException("FLX-1021",
+        return new java.lang.reflect.InvocationTargetException(new FabricatedDiagnosticException("FLX-1022",
+                STALE_PROCESSOR, new FabricatedDiagnosticException("FLX-1022",
                 "committed processor is stale and this build is not signed in", null)));
     }
 
@@ -101,8 +101,8 @@ public class AbstractFluxtionMojoTest {
     @Test
     public void aCarrierMessageWithoutItsCodeIsPrefixedWithIt() {
         Exception failure = new java.lang.reflect.InvocationTargetException(
-                new FabricatedDiagnosticException("FLX-1021", "committed processor is stale", null));
-        Assert.assertEquals("FLX-1021  committed processor is stale",
+                new FabricatedDiagnosticException("FLX-1022", "committed processor is stale", null));
+        Assert.assertEquals("FLX-1022  committed processor is stale",
                 AbstractFluxtionMojo.generationFailure("fallback", failure).getMessage());
     }
 

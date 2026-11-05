@@ -12,6 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 
 public class FluxtionPromoteMojoTest {
 
@@ -98,15 +101,12 @@ public class FluxtionPromoteMojoTest {
 
         Path pkg = srcJava.resolve(PKG);
         Assert.assertEquals("new source", read(pkg.resolve("DemoProcessor.java")));
-        Assert.assertFalse("a file the scan no longer writes is deleted", Files.exists(pkg.resolve("OldProcessor.java")));
+        Assert.assertTrue("not the generator's (no stamp), so kept", Files.exists(pkg.resolve("OldProcessor.java")));
         Assert.assertEquals("new stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
         Assert.assertEquals("unchanged bytes are not rewritten", before, Files.getLastModifiedTime(unchanged));
         Assert.assertFalse("PNG is never promoted to src", Files.exists(srcResources.resolve(PKG).resolve("DemoProcessor.png")));
         Assert.assertEquals("picture", read(classes.resolve(PKG).resolve("DemoProcessor.png")));
-        Assert.assertEquals(FluxtionPromoteMojo.files(srcJava.resolve(PKG)).toString(), "[DemoProcessor.java]");
-        try (java.util.stream.Stream<Path> left = Files.list(pkg)) {
-            Assert.assertEquals("no temporary files left", 1, left.count());
-        }
+        Assert.assertEquals("[DemoProcessor.java, OldProcessor.java]", FluxtionPromoteMojo.files(pkg).toString());
     }
 
     @Test
@@ -127,11 +127,150 @@ public class FluxtionPromoteMojoTest {
     }
 
     @Test
-    public void nothingStagedLeavesSrcUnchanged() throws Exception {
+    public void nothingStagedIsRefusedAndSrcIsUnchanged() throws Exception {
         commit();
-        mojo.execute();
+        try {
+            mojo.execute();
+            Assert.fail("expected a refusal");
+        } catch (MojoExecutionException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("staging holds no processor"));
+        }
         Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
         Assert.assertEquals("committed graphml", read(srcResources.resolve(PKG).resolve("DemoProcessor.graphml")));
+    }
+
+    private static Path put(Path file, String text) throws IOException {
+        Files.createDirectories(file.getParent());
+        Files.write(file, text.getBytes(StandardCharsets.UTF_8));
+        return file;
+    }
+
+    /** Review witness M1(a): the base package named as the generated package must not delete hand-written sources. */
+    @Test
+    public void basePackageAsGeneratedPackageNeverDeletesUserSources() throws Exception {
+        Path root = tmp.getRoot().toPath();
+        Path user = put(root.resolve("src/main/java/com/acme/app/node/Handler.java"), "user code");
+        put(root.resolve("src/main/java/com/acme/app/generated/P.java"), "committed");
+        put(root.resolve("target/fluxtion-staging/java/com/acme/app/generated/P.java"), "committed");
+        put(root.resolve("target/fluxtion-staging/resources/com/acme/app/generated/P.fluxtion-reused"), "x");
+        mojo.generatedPackage = "com.acme.app";
+        try {
+            mojo.execute();
+            Assert.fail("expected a refusal: no processor directly in com.acme.app");
+        } catch (MojoExecutionException expected) {
+            // refused, nothing deleted
+        }
+        Assert.assertTrue("hand-written source deleted by promote", Files.exists(user));
+    }
+
+    /** Review witness M1(b): a hand-written file in a sub-package of the generated package is kept. */
+    @Test
+    public void subPackageOfGeneratedPackageIsKept() throws Exception {
+        Path user = put(srcJava.resolve(PKG).resolve("support/Helper.java"), "user code");
+        write(srcJava, "DemoProcessor.java", "old");
+        write(stagingJava, "DemoProcessor.java", "new");
+        mojo.execute();
+        Assert.assertTrue("sub-package user file deleted by promote", Files.exists(user));
+        Assert.assertEquals("new", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+    }
+
+    /** Review witness M1(c): a package name that is not a Java package is refused before anything is touched. */
+    @Test
+    public void aPathAsGeneratedPackageIsRefused() throws Exception {
+        Path root = tmp.getRoot().toPath();
+        Path user = put(root.resolve("src/main/resources/application.yml"), "user config");
+        put(root.resolve("target/fluxtion-staging/java/x/P.java"), "new");
+        for (String bad : new String[]{"..", "../x", "com/acme", "com..acme", "/abs", "com.acme.", ".com", "1com"}) {
+            mojo.generatedPackage = bad;
+            try {
+                mojo.execute();
+                Assert.fail("expected refusal of " + bad);
+            } catch (MojoExecutionException e) {
+                Assert.assertTrue(e.getMessage(), e.getMessage().contains("<generatedPackage>"));
+            }
+        }
+        Assert.assertTrue("file outside the generated package deleted", Files.exists(user));
+        Assert.assertFalse(Files.exists(classes));
+    }
+
+    @Test
+    public void onlyTheGeneratorsFilesAreReplacedOrDeleted() throws Exception {
+        commit();
+        Path handWritten = write(srcJava, "Notes.java", "hand-written, no stamp");
+        Path readme = write(srcResources, "README.txt", "hand-written");
+        // a renamed processor: committed with a stamp, no longer staged
+        Path oldSource = write(srcJava, "OldProcessor.java", "old");
+        Path oldGraph = write(srcResources, "OldProcessor.graphml", "old");
+        Path oldStamp = write(srcResources, "OldProcessor.fluxtion-request.json", "old");
+        Path backup = write(srcJava, "OldProcessor.java.backup", "kept");
+        write(stagingJava, "DemoProcessor.java", "new source");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
+
+        mojo.execute();
+
+        Assert.assertTrue(Files.exists(handWritten));
+        Assert.assertTrue(Files.exists(readme));
+        Assert.assertTrue(Files.exists(backup));
+        Assert.assertFalse(Files.exists(oldSource));
+        Assert.assertFalse(Files.exists(oldGraph));
+        Assert.assertFalse(Files.exists(oldStamp));
+        Assert.assertEquals("new source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertFalse("not staged, so no longer generated",
+                Files.exists(srcResources.resolve(PKG).resolve("DemoProcessor.graphml")));
+    }
+
+    @Test
+    public void aReusedProcessorWithoutStagedSourceIsNeverDeleted() throws Exception {
+        commit();
+        write(stagingResources, "DemoProcessor" + FluxtionPromoteMojo.REUSED_MARKER_SUFFIX, "");
+        write(stagingJava, "OtherProcessor.java", "other generated");
+        mojo.execute();
+        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertEquals("committed stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertEquals("other generated", read(srcJava.resolve(PKG).resolve("OtherProcessor.java")));
+    }
+
+    @Test
+    public void promotedFilesKeepOrGetNormalPermissions() throws Exception {
+        org.junit.Assume.assumeTrue("POSIX permissions only",
+                java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        commit();
+        Path replaced = srcJava.resolve(PKG).resolve("DemoProcessor.java");
+        Set<PosixFilePermission> custom = PosixFilePermissions.fromString("rwxr-x---");
+        Files.setPosixFilePermissions(replaced, custom);
+        // what an ordinary write in this directory gets under the current umask
+        Path reference = write(srcResources, "reference.txt", "x");
+        Set<PosixFilePermission> normal = Files.getPosixFilePermissions(reference);
+        write(stagingJava, "DemoProcessor.java", "new source");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
+        Files.delete(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json"));
+
+        mojo.execute();
+
+        Assert.assertEquals("new source", read(replaced));
+        Assert.assertEquals("a replaced file keeps its permissions", custom, Files.getPosixFilePermissions(replaced));
+        Path created = srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json");
+        Assert.assertEquals("new stamp", read(created));
+        Assert.assertEquals("a new file gets the default permissions", normal, Files.getPosixFilePermissions(created));
+        Assert.assertEquals("a new class file gets the default permissions", normal,
+                Files.getPosixFilePermissions(classes.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+    }
+
+    @Test
+    public void aSymbolicLinkIsNeverFollowedOrDeleted() throws Exception {
+        commit();
+        Path outside = put(tmp.getRoot().toPath().resolve("outside/OldProcessor.java"), "outside");
+        Path link = srcJava.resolve(PKG).resolve("OldProcessor.java");
+        try {
+            Files.createSymbolicLink(link, outside);
+        } catch (UnsupportedOperationException | IOException noLinks) {
+            org.junit.Assume.assumeNoException(noLinks);
+        }
+        write(srcResources, "OldProcessor.fluxtion-request.json", "old");
+        write(stagingJava, "DemoProcessor.java", "new source");
+        mojo.execute();
+        Assert.assertTrue(Files.isSymbolicLink(link));
+        Assert.assertEquals("outside", read(outside));
     }
 
     @Test

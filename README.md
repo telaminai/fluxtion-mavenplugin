@@ -93,7 +93,7 @@ Scans compiled project classes for Fluxtion builder definitions and generates ev
 **Ensure mode** (requires `fluxtion-builder` 1.0.87 or later; an older builder ignores it and generates as before).
 With `ensureProcessor` set, the build reuses the committed processor when the compile request is unchanged, sending
 nothing and needing no sign-in. When the request has changed it regenerates (signed in) and stamps the result, or, when
-not signed in, fails with `FLX-1021` as the build's failure message.
+not signed in, fails with `FLX-1022` as the build's failure message.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -175,10 +175,19 @@ staging sources.
 *   The staged resources are always copied to `target/classes`, so the jar has this build's GraphML.
 *   When the builder reused every staged processor (it writes `<Processor>.fluxtion-reused` beside each), `src/` is not
     touched.
-*   Otherwise the generated package in `src/main/java` and `src/main/resources` is replaced file by file: each file is
-    written to a temporary file and renamed, unchanged files are not rewritten, and files the scan no longer writes are
-    deleted. PNG files are never promoted to `src/`, and the marker is never copied.
-*   Nothing staged in the package leaves `src/` unchanged. `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips it.
+*   Otherwise the generator's files are replaced one by one: each is written to a temporary file and renamed (a
+    replaced file keeps its permissions, a new one gets the default ones), and unchanged files are not rewritten.
+*   Only the generator's files are written or deleted: in the package's own directory, never a sub-package,
+    `<Processor>.java` in the sources and `<Processor>.java`, `.graphml`, `.png` and `.fluxtion-request.json` in the
+    resources, for a processor that is staged or has a committed stamp. A stamped processor the scan no longer writes
+    (a renamed one) has its files deleted; any other file in the package is left alone. PNG files are never promoted to
+    `src/`, and the marker is never copied.
+*   `generatedPackage` must be a Java package name. Staging that holds no processor in it fails the build and touches
+    nothing. `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips the goal.
+*   Staging must be emptied before every scan, for example with a `maven-clean-plugin` execution at `initialize`:
+    `promote` promotes every processor it finds there, so a previous build's leftovers would be promoted with this
+    one's. `promote` does not clear staging itself, because a failed scan or compile stops the build before it runs
+    and would leave staging behind anyway; only a clear before the scan covers every case.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
@@ -192,7 +201,9 @@ staging sources.
 ### Parallel builds (`-T`)
 The builder reads its directories, ensure settings and credential from JVM-wide system properties, so the `scan`,
 `springToFluxtion` and `yamlToFluxtion` goals take turns: one module's builder call (set, generate, restore) runs at a
-time, and the other modules' Fluxtion goals wait for it.
+time, and the other modules' Fluxtion goals wait for it. The lock belongs to the plugin's class realm: it serialises
+this plugin's goals across modules that use the same plugin version, not two different versions of the plugin in one
+build, nor another plugin that sets the same properties.
 
 ## Signing in to the Fluxtion compiler
 

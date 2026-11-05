@@ -5,16 +5,18 @@
 ### Added
 - `scan` ensure mode: `ensureProcessor` (`-Dfluxtion.ensureProcessor`), `ensureSourceDirectory`,
   `ensureResourcesDirectory` and `relocatableBase`. The build reuses the committed processor when the compile request
-  is unchanged and regenerates, or fails with `FLX-1021` when not signed in, otherwise. `-Dfluxtion.regenerate=true`
+  is unchanged and regenerates, or fails with `FLX-1022` when not signed in, otherwise. `-Dfluxtion.regenerate=true`
   (or a profile's `fluxtion.regenerate` property) forces generation. Requires `fluxtion-builder` 1.0.87 or later.
 - `promote` goal: copies a staged scan's resources to `target/classes` and, unless the builder reused every
-  processor, replaces the generated package in `src/` file by file (temporary file then rename, unchanged files left
-  alone, files no longer generated deleted, PNG never promoted). Replaces the clean and copy-resources executions a
-  staged build needed.
+  processor, replaces the generator's files in the generated package in `src/` (temporary file then rename, with
+  permissions kept or defaulted; unchanged files left alone; a renamed processor's stamped files deleted; PNG never
+  promoted). Only `<Processor>` files of staged or stamped processors in the package's own directory are touched.
+  Staging with no processor fails the build. Replaces the clean and copy-resources executions a staged build needed;
+  the staging clear at `initialize` stays.
 - `scan` with `ensureProcessor` fails at once when the project's builder has no ensure support.
 
 ### Changed
-- A build the builder refuses with a coded diagnostic (for example `FLX-1021`) fails with the diagnostic's line as
+- A build the builder refuses with a coded diagnostic (for example `FLX-1022`) fails with the diagnostic's line as
   the message, rather than "problem setting building fluxtion class loader".
 - A coded diagnostic's stack trace is logged at debug, since the builder has already printed the diagnostic.
 - `scan`, `springToFluxtion` and `yamlToFluxtion` take turns under `-T`, so parallel modules never see each other's

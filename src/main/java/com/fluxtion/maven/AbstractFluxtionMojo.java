@@ -88,14 +88,14 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
         return found == null ? null : CompilerAuthClient.printable(found);
     }
 
-    /** A Fluxtion diagnostic code, e.g. {@code FLX-1021}. */
+    /** A Fluxtion diagnostic code, e.g. {@code FLX-1022}. */
     private static final Pattern DIAGNOSTIC_CODE = Pattern.compile("FLX-\\d{3,}");
 
     /**
      * The builder's coded refusal ({@code DiagnosticBuildException}, or any {@code DiagnosticCarrier}), found in the
      * cause chain by its public {@code getCode()}: the plugin does not link the builder, which is loaded from the
      * project's classpath. The outermost carrier's message, since the scan entry point wraps the diagnostic once and
-     * words that message as the banner line ({@code FLX-1021  ERROR  ...}); prefixed with the code when the message
+     * words that message as the banner line ({@code FLX-1022  ERROR  ...}); prefixed with the code when the message
      * does not already name it. Null when no carrier is found. Control characters are replaced.
      */
     static String builderDiagnostic(Throwable failure) {
@@ -140,8 +140,8 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
 
     /**
      * The build's failure: the compiler's own refusal as the message when there is one (a plan limit, a used-up
-     * allowance, a refused credential), then the builder's coded diagnostic (e.g. FLX-1021, a stale committed
-     * processor in ensure mode), so the reason is the line Maven prints rather than buried in a stack trace;
+     * allowance, a refused credential), then the builder's coded diagnostic (e.g. FLX-1022, regeneration needed
+     * without a credential in ensure mode), so the reason is the line Maven prints rather than buried in a stack trace;
      * otherwise {@code fallback}, as before.
      */
     static MojoExecutionException generationFailure(String fallback, Exception failure) {
