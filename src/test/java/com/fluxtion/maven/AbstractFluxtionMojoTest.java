@@ -64,6 +64,64 @@ public class AbstractFluxtionMojoTest {
         Assert.assertNull(AbstractFluxtionMojo.compilerRefusal(null));
     }
 
+    /** Shaped like the builder's FLX-1021 ensure-mode refusal as the scan entry point wraps it (DiagnosticBuildException). */
+    static final String STALE_PROCESSOR = "FLX-1021  ERROR  Committed processor 'com.acme.DemoProcessor' does not"
+            + " match the current compile request (request-changed)  (details above; sidecar written to target/x.json)";
+
+    /** A fabricated diagnostic carrier: the builder's exceptions are not on the plugin's classpath, only their shape. */
+    public static class FabricatedDiagnosticException extends RuntimeException {
+        private final String code;
+
+        public FabricatedDiagnosticException(String code, String message, Throwable cause) {
+            super(message, cause);
+            this.code = code;
+        }
+
+        public String getCode() {
+            return code;
+        }
+    }
+
+    /** As it arrives from the scan: reflective invocation, the wrapping carrier, the legacy-prose carrier below it. */
+    static Exception staleProcessorFailure() {
+        return new java.lang.reflect.InvocationTargetException(new FabricatedDiagnosticException("FLX-1021",
+                STALE_PROCESSOR, new FabricatedDiagnosticException("FLX-1021",
+                "committed processor is stale and this build is not signed in", null)));
+    }
+
+    @Test
+    public void aCodedBuilderDiagnosticIsTheBuildFailureMessage() {
+        Exception failure = staleProcessorFailure();
+        MojoExecutionException e = AbstractFluxtionMojo.generationFailure("problem setting building fluxtion class loader",
+                failure);
+        Assert.assertEquals(STALE_PROCESSOR, e.getMessage());
+        Assert.assertSame(failure, e.getCause());
+    }
+
+    @Test
+    public void aCarrierMessageWithoutItsCodeIsPrefixedWithIt() {
+        Exception failure = new java.lang.reflect.InvocationTargetException(
+                new FabricatedDiagnosticException("FLX-1021", "committed processor is stale", null));
+        Assert.assertEquals("FLX-1021  committed processor is stale",
+                AbstractFluxtionMojo.generationFailure("fallback", failure).getMessage());
+    }
+
+    @Test
+    public void aGetCodeThatIsNotADiagnosticCodeIsIgnored() {
+        Exception failure = new java.lang.reflect.InvocationTargetException(
+                new FabricatedDiagnosticException("E42", "something else", null));
+        Assert.assertEquals("fallback", AbstractFluxtionMojo.generationFailure("fallback", failure).getMessage());
+        Assert.assertNull(AbstractFluxtionMojo.builderDiagnostic(null));
+    }
+
+    @Test
+    public void aCompilerRefusalStillWinsOverACodedWrapper() {
+        Exception failure = new java.lang.reflect.InvocationTargetException(new FabricatedDiagnosticException(
+                "FLX-1100", "FLX-1100  ERROR  remote refusal", new java.io.IOException(CAPABILITY_REFUSAL)));
+        Assert.assertEquals("The Fluxtion compiler refused this build. " + CAPABILITY_REFUSAL,
+                AbstractFluxtionMojo.generationFailure("fallback", failure).getMessage());
+    }
+
     private static class ConcreteFluxtionMojo extends AbstractFluxtionMojo {
         @Override
         public void execute() throws MojoExecutionException {

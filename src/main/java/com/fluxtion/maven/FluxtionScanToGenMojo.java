@@ -9,6 +9,7 @@ import org.apache.maven.plugins.annotations.ResolutionScope;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.net.URLClassLoader;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -29,10 +30,41 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
 
     @Parameter(property = "resourcesDirectory")
     protected String resourcesDirectory;
+
+    /**
+     * Ensure mode: reuse the committed processor when the compile request is unchanged, otherwise regenerate
+     * (signed in) or fail with FLX-1021. Needs a builder that reads the {@code FLUXTION.ENSURE.*} properties; an
+     * older builder ignores them and generates as before.
+     */
+    @Parameter(property = "fluxtion.ensureProcessor", defaultValue = "false")
+    protected boolean ensureProcessor;
+
+    /** Where the committed processor source lives; ensure mode only. */
+    @Parameter(defaultValue = "${project.build.sourceDirectory}")
+    protected String ensureSourceDirectory;
+
+    /** Where the committed request stamp lives; ensure mode only. */
+    @Parameter(defaultValue = "${project.basedir}/src/main/resources")
+    protected String ensureResourcesDirectory;
+
+    /** Optional package prefix the request digest is made independent of; ensure mode only. */
+    @Parameter
+    protected String relocatableBase;
+
+    /**
+     * Forces generation in ensure mode. Read as a parameter so a profile's {@code <fluxtion.regenerate>} property
+     * reaches the builder as well as {@code -Dfluxtion.regenerate=true}.
+     */
+    @Parameter(property = REGENERATE)
+    protected String regenerate;
     public static final String GENERATOR_METHOD = "scanAndGenerateFluxtionBuilders";
     public static final String FLUXTION_GENERATOR_CLASS = "com.telamin.fluxtion.Fluxtion";
     public static final String OUTPUT_DIRECTORY = "FLUXTION.OUTPUT.DIRECTORY";
     public static final String RESOURCES_DIRECTORY = "FLUXTION.RESOURCES.DIRECTORY";
+    public static final String ENSURE_SOURCE_DIRECTORY = "FLUXTION.ENSURE.SOURCE.DIRECTORY";
+    public static final String ENSURE_RESOURCES_DIRECTORY = "FLUXTION.ENSURE.RESOURCES.DIRECTORY";
+    public static final String ENSURE_RELOCATABLE_BASE = "FLUXTION.ENSURE.RELOCATABLE.BASE";
+    public static final String REGENERATE = "fluxtion.regenerate";
 
     @Override
     public void execute() throws MojoExecutionException {
@@ -40,6 +72,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             getLog().info("Fluxtion generation skipped.");
         } else {
             Map<String, String> previousAuth = applyCompilerAuth();
+            Map<String, String> previousProperties = new LinkedHashMap<>();
             try {
                 if (buildDirectory == null) {
                     buildDirectory = project.getBasedir().getCanonicalPath() + "/target/classes";
@@ -52,8 +85,11 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
                 if (resourcesDirectory == null) {
                     resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
                 }
-                System.setProperty(OUTPUT_DIRECTORY, outputDirectory);
-                System.setProperty(RESOURCES_DIRECTORY, resourcesDirectory);
+                setProperty(previousProperties, OUTPUT_DIRECTORY, outputDirectory);
+                setProperty(previousProperties, RESOURCES_DIRECTORY, resourcesDirectory);
+                if (ensureProcessor) {
+                    applyEnsureProperties(previousProperties);
+                }
                 URLClassLoader classLoader = buildFluxtionClassLoader();
                 ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
                 try {
@@ -68,8 +104,47 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
                 getLog().error(exception);
                 throw generationFailure("problem setting building fluxtion class loader", exception);
             } finally {
+                restoreProperties(previousProperties);
                 CompilerCredentials.restore(previousAuth);
             }
+        }
+    }
+
+    /** Sets the builder's ensure-mode properties; the ensure source directory being set is what enables it. */
+    private void applyEnsureProperties(Map<String, String> previous) throws java.io.IOException {
+        String base = project.getBasedir().getCanonicalPath();
+        String sourceDirectory = ensureSourceDirectory != null ? ensureSourceDirectory
+                : project.getBuild().getSourceDirectory();
+        String resources = ensureResourcesDirectory != null ? ensureResourcesDirectory
+                : base + "/src/main/resources";
+        setProperty(previous, ENSURE_SOURCE_DIRECTORY, absolute(base, sourceDirectory));
+        setProperty(previous, ENSURE_RESOURCES_DIRECTORY, absolute(base, resources));
+        if (relocatableBase != null && !relocatableBase.trim().isEmpty()) {
+            setProperty(previous, ENSURE_RELOCATABLE_BASE, relocatableBase.trim());
+        }
+        if (regenerate != null && !regenerate.trim().isEmpty()) {
+            setProperty(previous, REGENERATE, regenerate.trim());
+        }
+        getLog().info("Fluxtion ensure mode: committed processor in " + System.getProperty(ENSURE_SOURCE_DIRECTORY)
+                + (Boolean.parseBoolean(System.getProperty(REGENERATE)) ? ", regeneration forced" : ""));
+    }
+
+    private static String absolute(String base, String path) {
+        return new File(path).isAbsolute() ? path : new File(base, path).getPath();
+    }
+
+    private static void setProperty(Map<String, String> previous, String key, String value) {
+        if (!previous.containsKey(key)) {
+            previous.put(key, System.getProperty(key));
+        }
+        System.setProperty(key, value);
+    }
+
+    /** Puts back every property this goal set, so nothing outlives the scan (a later goal in the same JVM). */
+    private static void restoreProperties(Map<String, String> previous) {
+        for (Map.Entry<String, String> e : previous.entrySet()) {
+            if (e.getValue() == null) System.clearProperty(e.getKey());
+            else System.setProperty(e.getKey(), e.getValue());
         }
     }
 }

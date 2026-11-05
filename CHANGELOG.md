@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `scan` ensure mode: `ensureProcessor` (`-Dfluxtion.ensureProcessor`), `ensureSourceDirectory`,
+  `ensureResourcesDirectory` and `relocatableBase`. The build reuses the committed processor when the compile request
+  is unchanged and regenerates, or fails with `FLX-1021` when not signed in, otherwise. `-Dfluxtion.regenerate=true`
+  (or a profile's `fluxtion.regenerate` property) forces generation. Requires `fluxtion-builder` 1.0.87 or later.
+
+### Changed
+- A build the builder refuses with a coded diagnostic (for example `FLX-1021`) fails with the diagnostic's line as
+  the message, rather than "problem setting building fluxtion class loader".
+- `scan` restores `FLUXTION.OUTPUT.DIRECTORY` and `FLUXTION.RESOURCES.DIRECTORY` when it finishes, as it does the
+  credential properties.
+
 ## [1.3.1]
 
 Requires `com.telamin.fluxtion:fluxtion-builder` **1.0.82 or later** on the project's build classpath for compiler

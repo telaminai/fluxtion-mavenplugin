@@ -90,6 +90,19 @@ Scans compiled project classes for Fluxtion builder definitions and generates ev
 ```
 *   `buildDirectory`: Directory to scan for classes (default: `target/classes`).
 
+**Ensure mode** (requires `fluxtion-builder` 1.0.87 or later; an older builder ignores it and generates as before).
+With `ensureProcessor` set, the build reuses the committed processor when the compile request is unchanged, sending
+nothing and needing no sign-in. When the request has changed it regenerates (signed in) and stamps the result, or, when
+not signed in, fails with `FLX-1021` as the build's failure message.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ensureProcessor` (`-Dfluxtion.ensureProcessor`) | Reuse the committed processor when the request is unchanged. | `false` |
+| `ensureSourceDirectory` | Where the committed processor source lives. | `${project.build.sourceDirectory}` |
+| `ensureResourcesDirectory` | Where the committed request stamp (`<Processor>.fluxtion-request.json`) lives. | `${project.basedir}/src/main/resources` |
+| `relocatableBase` | Optional package prefix the request digest ignores, so a repackaged processor still matches. | none |
+| `-Dfluxtion.regenerate=true` | Regenerate even when the request is unchanged (also read from a profile property). | unset |
+
 #### 2. `springToFluxtion`
 Generates a Fluxtion event processor from a Spring context definition.
 

@@ -12,12 +12,25 @@ public class Fluxtion {
     public static String seenToken;
     public static String seenHost;
     public static String seenPort;
+    /** The builder's directory and ensure-mode system properties as they were while the builder ran. */
+    public static final java.util.Map<String, String> seenProperties = new java.util.HashMap<>();
+    /** Thrown from the scan when set, as the builder would throw a refusal. */
+    public static RuntimeException failWith;
+    private static final String[] RECORDED = {"FLUXTION.OUTPUT.DIRECTORY", "FLUXTION.RESOURCES.DIRECTORY",
+            "FLUXTION.ENSURE.SOURCE.DIRECTORY", "FLUXTION.ENSURE.RESOURCES.DIRECTORY",
+            "FLUXTION.ENSURE.RELOCATABLE.BASE", "fluxtion.regenerate"};
 
     public static void scanAndGenerateFluxtionBuilders(ClassLoader cl, File[] files) {
         called = true;
         passedClassLoader = cl;
         passedFiles = files;
         recordAuth();
+        for (String key : RECORDED) {
+            seenProperties.put(key, System.getProperty(key));
+        }
+        if (failWith != null) {
+            throw failWith;
+        }
     }
 
     public static void compileFromReader(java.io.Reader reader) {
@@ -42,5 +55,7 @@ public class Fluxtion {
         seenToken = null;
         seenHost = null;
         seenPort = null;
+        seenProperties.clear();
+        failWith = null;
     }
 }
