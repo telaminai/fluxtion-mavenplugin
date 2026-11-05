@@ -11,7 +11,7 @@
   processor, replaces the generator's files in the generated package in `src/` (temporary file then rename, with
   permissions kept or defaulted; unchanged files left alone; a renamed processor's stamped files deleted; PNG never
   promoted). Only `<Processor>` files of staged or stamped processors in the package's own directory are touched.
-  Staging with no processor fails the build. Replaces the clean and copy-resources executions a staged build needed;
+  Staging with no processor, or a symbolic link to the package or to a processor's file, fails the build. Replaces the clean and copy-resources executions a staged build needed;
   the staging clear at `initialize` stays.
 - `scan` with `ensureProcessor` fails at once when the project's builder has no ensure support.
 

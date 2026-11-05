@@ -182,6 +182,8 @@ staging sources.
     resources, for a processor that is staged or has a committed stamp. A stamped processor the scan no longer writes
     (a renamed one) has its files deleted; any other file in the package is left alone. PNG files are never promoted to
     `src/`, and the marker is never copied.
+*   A symbolic link on the way to the generated package (below `sourceDirectory`/`resourcesDirectory`), or as one of a
+    processor's files, fails the build before anything is written.
 *   `generatedPackage` must be a Java package name. Staging that holds no processor in it fails the build and touches
     nothing. `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips the goal.
 *   Staging must be emptied before every scan, for example with a `maven-clean-plugin` execution at `initialize`:

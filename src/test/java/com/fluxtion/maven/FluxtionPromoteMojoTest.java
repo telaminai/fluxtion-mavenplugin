@@ -15,6 +15,7 @@ import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
+import java.util.stream.Stream;
 
 public class FluxtionPromoteMojoTest {
 
@@ -256,38 +257,85 @@ public class FluxtionPromoteMojoTest {
                 Files.getPosixFilePermissions(classes.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
     }
 
+    private static void link(Path link, Path target) {
+        try {
+            Files.createDirectories(link.getParent());
+            Files.createSymbolicLink(link, target);
+        } catch (UnsupportedOperationException | IOException noLinks) {
+            org.junit.Assume.assumeNoException(noLinks);
+        }
+    }
+
+    private void assertRefusedNaming(Path named) {
+        try {
+            mojo.execute();
+            Assert.fail("expected a refusal naming " + named);
+        } catch (MojoExecutionException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains(named.toString()));
+        }
+    }
+
+    /** A renamed-away processor whose committed source is a link: refused, the link and its target untouched. */
     @Test
     public void aSymbolicLinkIsNeverFollowedOrDeleted() throws Exception {
         commit();
         Path outside = put(tmp.getRoot().toPath().resolve("outside/OldProcessor.java"), "outside");
         Path link = srcJava.resolve(PKG).resolve("OldProcessor.java");
-        try {
-            Files.createSymbolicLink(link, outside);
-        } catch (UnsupportedOperationException | IOException noLinks) {
-            org.junit.Assume.assumeNoException(noLinks);
-        }
+        link(link, outside);
         write(srcResources, "OldProcessor.fluxtion-request.json", "old");
         write(stagingJava, "DemoProcessor.java", "new source");
-        mojo.execute();
+        assertRefusedNaming(link);
         Assert.assertTrue(Files.isSymbolicLink(link));
         Assert.assertEquals("outside", read(outside));
+        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
     }
 
+    /** Review witness N1: a linked committed source must not leave a new stamp beside the old source. */
     @Test
-    public void skipAndSkipFluxtionLeaveEverythingAlone() throws Exception {
-        commit();
+    public void aLinkedProcessorSourceRefusesTheWholeProcessor() throws Exception {
+        Path real = put(tmp.getRoot().toPath().resolve("elsewhere/DemoProcessor.java"), "old source");
+        Path link = srcJava.resolve(PKG).resolve("DemoProcessor.java");
+        link(link, real);
+        write(srcResources, "DemoProcessor.fluxtion-request.json", "old stamp");
         write(stagingJava, "DemoProcessor.java", "new source");
-        mojo.skip = true;
-        mojo.execute();
-        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
-        mojo.skip = false;
-        System.setProperty("skipFluxtion", "");
-        try {
-            mojo.execute();
-        } finally {
-            System.clearProperty("skipFluxtion");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
+        assertRefusedNaming(link);
+        Assert.assertEquals("old source", read(real));
+        Assert.assertEquals("old stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertFalse("refused before target/classes is written", Files.exists(classes));
+    }
+
+    /** Review witness N2: a linked package directory, or a linked ancestor below the source root, is refused. */
+    @Test
+    public void aLinkedPackageDirectoryOrAncestorIsRefused() throws Exception {
+        write(stagingJava, "DemoProcessor.java", "new source");
+        Path elsewhere = tmp.getRoot().toPath().resolve("elsewhere");
+        Files.createDirectories(elsewhere);
+        Path linkedPackage = srcJava.resolve(PKG);
+        link(linkedPackage, elsewhere);
+        assertRefusedNaming(linkedPackage);
+        Assert.assertFalse(Files.exists(elsewhere.resolve("DemoProcessor.java")));
+
+        Files.delete(linkedPackage);
+        Path linkedAncestor = srcResources.resolve("com/acme");
+        link(linkedAncestor, elsewhere);
+        assertRefusedNaming(linkedAncestor);
+        try (Stream<Path> left = Files.list(elsewhere)) {
+            Assert.assertEquals("nothing written through the link", 0, left.count());
         }
-        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+    }
+
+    /** A linked source root itself (e.g. under /tmp on macOS) is the project's own choice and is allowed. */
+    @Test
+    public void aLinkedSourceRootIsAllowed() throws Exception {
+        Path realRoot = tmp.getRoot().toPath().resolve("real-src-java");
+        Files.createDirectories(realRoot);
+        Path linkedRoot = tmp.getRoot().toPath().resolve("linked-src-java");
+        link(linkedRoot, realRoot);
+        mojo.sourceDirectory = linkedRoot.toString();
+        write(stagingJava, "DemoProcessor.java", "new source");
+        mojo.execute();
+        Assert.assertEquals("new source", read(realRoot.resolve(PKG).resolve("DemoProcessor.java")));
     }
 
     @Test(expected = MojoExecutionException.class)

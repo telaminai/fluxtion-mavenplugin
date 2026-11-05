@@ -40,6 +40,8 @@ import java.util.stream.Stream;
  * {@code .fluxtion-request.json} in the resources, for a processor named by the staging or by a committed stamp. A
  * processor's file the scan no longer writes (a renamed processor) is deleted; anything else in the package, and every
  * sub-package, is left alone. PNG files are never promoted to {@code src/}, and the marker is never copied anywhere.
+ * A symbolic link on the way to the package, or as one of a processor's files, refuses the build before anything is
+ * written.
  *
  * <p>Staging must be emptied before each scan (the staged build clears it at {@code initialize}); this goal promotes
  * whatever processors it finds there.
@@ -105,22 +107,34 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                         + stagedJavaPackage + "); nothing promoted. Check that the scan wrote to the staging"
                         + " directories and that <generatedPackage> names the package it generates into.");
             }
+            boolean reuse = reused.containsAll(staged);
+            // a reused processor's committed files are already right; only the generated ones and renamed-away
+            // ones (named by a committed stamp, no longer staged) are written or deleted
+            Set<String> known = new TreeSet<>(staged);
+            if (!reuse) {
+                // checked before anything is written, so a refusal leaves src/ and target/classes as they were
+                requireNoLinks(Paths.get(sourceDirectory), packagePath);
+                requireNoLinks(Paths.get(resourcesDirectory), packagePath);
+                known.addAll(namesEndingWith(srcResourcePackage, STAMP_SUFFIX));
+                known.removeAll(reused);
+                for (String processor : known) {
+                    requireRegularOrAbsent(srcJavaPackage.resolve(processor + ".java"));
+                    for (String suffix : RESOURCE_SUFFIXES) {
+                        requireRegularOrAbsent(srcResourcePackage.resolve(processor + suffix));
+                    }
+                }
+            }
             Counts classes = new Counts();
             for (Path relative : files(stagedResources)) {
                 if (!relative.getFileName().toString().endsWith(REUSED_MARKER_SUFFIX)) {
                     promote(stagedResources.resolve(relative), Paths.get(classesDirectory).resolve(relative), classes);
                 }
             }
-            if (reused.containsAll(staged)) {
+            if (reuse) {
                 getLog().info("Fluxtion promote: " + pkg + " reused (" + String.join(", ", reused)
                         + "), src/ unchanged; " + classes + " in " + classesDirectory);
                 return;
             }
-            // a reused processor's committed files are already right; only the generated ones and renamed-away
-            // ones (named by a committed stamp, no longer staged) are written or deleted
-            Set<String> known = new TreeSet<>(staged);
-            known.addAll(namesEndingWith(srcResourcePackage, STAMP_SUFFIX));
-            known.removeAll(reused);
             Counts src = new Counts();
             for (String processor : known) {
                 replace(stagedJavaPackage, srcJavaPackage, processor + ".java", src);
@@ -136,15 +150,40 @@ public class FluxtionPromoteMojo extends AbstractMojo {
     }
 
     /**
-     * One generator file: promoted when staged (PNG never), deleted when not staged. A symbolic link or anything
-     * other than a regular file is never written over or deleted.
+     * Refuses a symbolic link on the way from {@code root} down to the generated package: writing through one would
+     * land outside the project's source tree. {@code root} itself may sit below a link (e.g. {@code /tmp}).
      */
+    private static void requireNoLinks(Path root, String packagePath) throws MojoExecutionException {
+        Path at = root.toAbsolutePath().normalize();
+        for (Path part : Paths.get(packagePath)) {
+            at = at.resolve(part);
+            if (Files.isSymbolicLink(at)) {
+                throw new MojoExecutionException("Fluxtion promote: " + at + " is a symbolic link; the generated"
+                        + " package is not written through links. Nothing promoted.");
+            }
+            if (!Files.exists(at, LinkOption.NOFOLLOW_LINKS)) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * Refuses a processor whose committed file is a link or not a file: skipping just that file would promote the
+     * rest of the processor (a new stamp beside the old source), and the regenerated processor would silently never
+     * land.
+     */
+    private static void requireRegularOrAbsent(Path to) throws MojoExecutionException {
+        if (Files.exists(to, LinkOption.NOFOLLOW_LINKS) && !Files.isRegularFile(to, LinkOption.NOFOLLOW_LINKS)) {
+            throw new MojoExecutionException("Fluxtion promote: " + to + " is a symbolic link or not a regular file,"
+                    + " so the processor cannot be replaced. Replace it with the file itself and rebuild. Nothing"
+                    + " promoted.");
+        }
+    }
+
+    /** One generator file: promoted when staged (PNG never), deleted when not staged. Checked to be a file first. */
     private static void replace(Path stagedDir, Path srcDir, String name, Counts counts) throws IOException {
         Path from = stagedDir.resolve(name);
         Path to = srcDir.resolve(name);
-        if (Files.exists(to, LinkOption.NOFOLLOW_LINKS) && !Files.isRegularFile(to, LinkOption.NOFOLLOW_LINKS)) {
-            return;
-        }
         boolean png = name.toLowerCase(Locale.ROOT).endsWith(".png");
         if (!png && Files.isRegularFile(from, LinkOption.NOFOLLOW_LINKS)) {
             promote(from, to, counts);
