@@ -103,6 +103,9 @@ not signed in, fails with `FLX-1021` as the build's failure message.
 | `relocatableBase` | Optional package prefix the request digest ignores, so a repackaged processor still matches. | none |
 | `-Dfluxtion.regenerate=true` | Regenerate even when the request is unchanged (also read from a profile property). | unset |
 
+With `ensureProcessor` set, a project whose `fluxtion-builder` has no ensure support fails at once with a message
+naming the version it needs, rather than regenerating on every build.
+
 #### 2. `springToFluxtion`
 Generates a Fluxtion event processor from a Spring context definition.
 
@@ -152,6 +155,44 @@ Generates event processors from YAML configuration files.
 </plugin>
 ```
 *   `fluxtionConfigFiles`: (Required) Array of YAML configuration files to process.
+
+#### 4. `promote`
+Promotes a scan written to a staging directory (`<outputDirectory>`/`<resourcesDirectory>` under `target/`) into the
+project once the staged processor has compiled. Bind it at `process-classes`, after the scan and the compile of the
+staging sources.
+
+```xml
+<execution>
+    <id>promote-generated</id>
+    <phase>process-classes</phase>
+    <goals><goal>promote</goal></goals>
+    <configuration>
+        <generatedPackage>com.example.myapp.generated</generatedPackage>
+    </configuration>
+</execution>
+```
+
+*   The staged resources are always copied to `target/classes`, so the jar has this build's GraphML.
+*   When the builder reused every staged processor (it writes `<Processor>.fluxtion-reused` beside each), `src/` is not
+    touched.
+*   Otherwise the generated package in `src/main/java` and `src/main/resources` is replaced file by file: each file is
+    written to a temporary file and renamed, unchanged files are not rewritten, and files the scan no longer writes are
+    deleted. PNG files are never promoted to `src/`, and the marker is never copied.
+*   Nothing staged in the package leaves `src/` unchanged. `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips it.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `generatedPackage` (`-Dfluxtion.generatedPackage`) | The package the scan generates into; required. | none |
+| `stagingSourceDirectory` | Staged sources. | `${project.build.directory}/fluxtion-staging/java` |
+| `stagingResourcesDirectory` | Staged resources. | `${project.build.directory}/fluxtion-staging/resources` |
+| `sourceDirectory` | Where sources are promoted. | `${project.build.sourceDirectory}` |
+| `resourcesDirectory` | Where resources are promoted. | `${project.basedir}/src/main/resources` |
+| `classesDirectory` | Where staged resources are copied for the jar. | `${project.build.outputDirectory}` |
+
+### Parallel builds (`-T`)
+The builder reads its directories, ensure settings and credential from JVM-wide system properties, so the `scan`,
+`springToFluxtion` and `yamlToFluxtion` goals take turns: one module's builder call (set, generate, restore) runs at a
+time, and the other modules' Fluxtion goals wait for it.
 
 ## Signing in to the Fluxtion compiler
 

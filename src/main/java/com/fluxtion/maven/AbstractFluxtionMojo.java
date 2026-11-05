@@ -104,12 +104,29 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
             String code = diagnosticCode(t);
             if (code != null) {
                 String m = t.getMessage();
-                String line = m == null || m.trim().isEmpty() ? code : m.contains(code) ? m : code + "  " + m;
+                String line = m == null || m.trim().isEmpty() ? code : namesCode(m, code) ? m : code + "  " + m;
                 return CompilerAuthClient.printable(line);
             }
             if (t.getCause() == t) break;
         }
         return null;
+    }
+
+    /** The code as a whole word: {@code FLX-102} is not named by a message about {@code FLX-1021}. */
+    static boolean namesCode(String message, String code) {
+        return Pattern.compile("(?<![\\w-])" + Pattern.quote(code) + "(?![\\w-])").matcher(message).find();
+    }
+
+    /**
+     * Logs a failed builder call. A coded diagnostic has already been rendered by the builder and becomes the failure
+     * message, so its stack trace is debug only; any other failure keeps the stack trace at error, as before.
+     */
+    protected void logGenerationFailure(Exception failure) {
+        if (compilerRefusal(failure) == null && builderDiagnostic(failure) != null) {
+            getLog().debug(failure);
+        } else {
+            getLog().error(failure);
+        }
     }
 
     private static String diagnosticCode(Throwable t) {

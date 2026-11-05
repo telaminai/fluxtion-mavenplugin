@@ -41,36 +41,45 @@ public class FluxtionYamlToGenMojo extends AbstractFluxtionMojo {
         if (System.getProperty("skipFluxtion") != null) {
             getLog().info("Fluxtion generation skipped.");
         } else {
-            Map<String, String> previousAuth = applyCompilerAuth();
+            CompilerCredentials.lockBuilderProperties(); // one builder call at a time under -T
             try {
-                if (outputDirectory == null) {
-                    outputDirectory = project.getBuild().getSourceDirectory();
-                }
-                if (resourcesDirectory == null) {
-                    resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
-                }
-                System.setProperty(OUTPUT_DIRECTORY, outputDirectory);
-                System.setProperty(RESOURCES_DIRECTORY, resourcesDirectory);
-                URLClassLoader classLoader = buildFluxtionClassLoader();
-                ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
-                try {
-                    Thread.currentThread().setContextClassLoader(classLoader);
-                    Class<?> genClass = classLoader.loadClass(FLUXTION_GENERATOR_CLASS);
-                    Method generatorMethod = genClass.getMethod(GENERATOR_METHOD, Reader.class);
-                    for (File fluxtionConfigFile : fluxtionConfigFiles) {
-                        try (FileReader fileReader = new FileReader(fluxtionConfigFile)) {
-                            generatorMethod.invoke(null, fileReader);
-                        }
-                    }
-                } finally {
-                    Thread.currentThread().setContextClassLoader(oldContextClassLoader);
-                }
-            } catch (Exception exception) {
-                getLog().error(exception);
-                throw generationFailure("problem setting building fluxtion class loader", exception);
+                generate();
             } finally {
-                CompilerCredentials.restore(previousAuth);
+                CompilerCredentials.unlockBuilderProperties();
             }
+        }
+    }
+
+    private void generate() throws MojoExecutionException {
+        Map<String, String> previousAuth = applyCompilerAuth();
+        try {
+            if (outputDirectory == null) {
+                outputDirectory = project.getBuild().getSourceDirectory();
+            }
+            if (resourcesDirectory == null) {
+                resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
+            }
+            System.setProperty(OUTPUT_DIRECTORY, outputDirectory);
+            System.setProperty(RESOURCES_DIRECTORY, resourcesDirectory);
+            URLClassLoader classLoader = buildFluxtionClassLoader();
+            ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
+            try {
+                Thread.currentThread().setContextClassLoader(classLoader);
+                Class<?> genClass = classLoader.loadClass(FLUXTION_GENERATOR_CLASS);
+                Method generatorMethod = genClass.getMethod(GENERATOR_METHOD, Reader.class);
+                for (File fluxtionConfigFile : fluxtionConfigFiles) {
+                    try (FileReader fileReader = new FileReader(fluxtionConfigFile)) {
+                        generatorMethod.invoke(null, fileReader);
+                    }
+                }
+            } finally {
+                Thread.currentThread().setContextClassLoader(oldContextClassLoader);
+            }
+        } catch (Exception exception) {
+            logGenerationFailure(exception);
+            throw generationFailure("problem setting building fluxtion class loader", exception);
+        } finally {
+            CompilerCredentials.restore(previousAuth);
         }
     }
 }

@@ -190,8 +190,43 @@ public class FluxtionScanToGenMojoTest {
             } catch (MojoExecutionException e) {
                 Assert.assertEquals(AbstractFluxtionMojoTest.STALE_PROCESSOR, e.getMessage());
             }
+            Assert.assertFalse("the -T lock is released", CompilerCredentials.builderPropertiesLocked());
             Assert.assertEquals("com.acme", Fluxtion.seenProperties.get(FluxtionScanToGenMojo.ENSURE_RELOCATABLE_BASE));
             for (String key : PROPERTIES) Assert.assertNull(key, System.getProperty(key));
+        } finally {
+            restore(before);
+        }
+    }
+
+    @Test
+    public void anOldBuilderFailsFastInEnsureMode() throws Exception {
+        Map<String, String> before = snapshot();
+        try {
+            for (String key : PROPERTIES) System.clearProperty(key);
+            mojo.ensureProcessor = true;
+            mojo.ensureSupportClass = "com.telamin.fluxtion.builder.compile.generation.NotInThisBuilder";
+            try {
+                mojo.execute();
+                Assert.fail("expected an old builder to be refused");
+            } catch (MojoExecutionException e) {
+                Assert.assertTrue(e.getMessage(), e.getMessage().startsWith("ensureProcessor needs"
+                        + " com.telamin.fluxtion:fluxtion-builder 1.0.87 or later"));
+            }
+            Assert.assertFalse("the scan must not run", Fluxtion.called);
+            Assert.assertFalse("the -T lock is released", CompilerCredentials.builderPropertiesLocked());
+            for (String key : PROPERTIES) Assert.assertNull(key, System.getProperty(key));
+        } finally {
+            restore(before);
+        }
+    }
+
+    @Test
+    public void anOldBuilderIsNotProbedWithoutEnsureMode() throws Exception {
+        Map<String, String> before = snapshot();
+        try {
+            mojo.ensureSupportClass = "com.telamin.fluxtion.builder.compile.generation.NotInThisBuilder";
+            mojo.execute();
+            Assert.assertTrue(Fluxtion.called);
         } finally {
             restore(before);
         }

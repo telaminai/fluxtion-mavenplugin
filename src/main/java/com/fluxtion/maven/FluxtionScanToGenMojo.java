@@ -65,48 +65,67 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
     public static final String ENSURE_RESOURCES_DIRECTORY = "FLUXTION.ENSURE.RESOURCES.DIRECTORY";
     public static final String ENSURE_RELOCATABLE_BASE = "FLUXTION.ENSURE.RELOCATABLE.BASE";
     public static final String REGENERATE = "fluxtion.regenerate";
+    /** A class only a builder with ensure support (fluxtion-builder 1.0.87 or later) has; probed, never initialised. */
+    public static final String ENSURE_SUPPORT_CLASS = "com.telamin.fluxtion.builder.compile.generation.EnsureProcessor";
+
+    /** The class probed for ensure support; replaced in tests. */
+    String ensureSupportClass = ENSURE_SUPPORT_CLASS;
 
     @Override
     public void execute() throws MojoExecutionException {
         if (System.getProperty("skipFluxtion") != null) {
             getLog().info("Fluxtion generation skipped.");
         } else {
-            Map<String, String> previousAuth = applyCompilerAuth();
-            Map<String, String> previousProperties = new LinkedHashMap<>();
+            CompilerCredentials.lockBuilderProperties(); // one builder call at a time under -T
             try {
-                if (buildDirectory == null) {
-                    buildDirectory = project.getBasedir().getCanonicalPath() + "/target/classes";
-                } else if (!buildDirectory.startsWith("/")) {
-                    buildDirectory = project.getBasedir().getCanonicalPath() + "/" + buildDirectory;
-                }
-                if (outputDirectory == null) {
-                    outputDirectory = project.getBuild().getSourceDirectory();
-                }
-                if (resourcesDirectory == null) {
-                    resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
-                }
-                setProperty(previousProperties, OUTPUT_DIRECTORY, outputDirectory);
-                setProperty(previousProperties, RESOURCES_DIRECTORY, resourcesDirectory);
-                if (ensureProcessor) {
-                    applyEnsureProperties(previousProperties);
-                }
-                URLClassLoader classLoader = buildFluxtionClassLoader();
-                ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
-                try {
-                    Thread.currentThread().setContextClassLoader(classLoader);
-                    Class<?> genClass = classLoader.loadClass(FLUXTION_GENERATOR_CLASS);
-                    Method generatorMethod = genClass.getMethod(GENERATOR_METHOD, ClassLoader.class, File[].class);
-                    generatorMethod.invoke(null, classLoader, new File[]{new File(buildDirectory)});
-                } finally {
-                    Thread.currentThread().setContextClassLoader(oldContextClassLoader);
-                }
-            } catch (Exception exception) {
-                getLog().error(exception);
-                throw generationFailure("problem setting building fluxtion class loader", exception);
+                generate();
             } finally {
-                restoreProperties(previousProperties);
-                CompilerCredentials.restore(previousAuth);
+                CompilerCredentials.unlockBuilderProperties();
             }
+        }
+    }
+
+    private void generate() throws MojoExecutionException {
+        Map<String, String> previousAuth = applyCompilerAuth();
+        Map<String, String> previousProperties = new LinkedHashMap<>();
+        try {
+            if (buildDirectory == null) {
+                buildDirectory = project.getBasedir().getCanonicalPath() + "/target/classes";
+            } else if (!buildDirectory.startsWith("/")) {
+                buildDirectory = project.getBasedir().getCanonicalPath() + "/" + buildDirectory;
+            }
+            if (outputDirectory == null) {
+                outputDirectory = project.getBuild().getSourceDirectory();
+            }
+            if (resourcesDirectory == null) {
+                resourcesDirectory = project.getBasedir().getCanonicalPath() + "/src/main/resources";
+            }
+            setProperty(previousProperties, OUTPUT_DIRECTORY, outputDirectory);
+            setProperty(previousProperties, RESOURCES_DIRECTORY, resourcesDirectory);
+            if (ensureProcessor) {
+                applyEnsureProperties(previousProperties);
+            }
+            URLClassLoader classLoader = buildFluxtionClassLoader();
+            if (ensureProcessor) {
+                requireEnsureSupport(classLoader);
+            }
+            ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
+            try {
+                Thread.currentThread().setContextClassLoader(classLoader);
+                Class<?> genClass = classLoader.loadClass(FLUXTION_GENERATOR_CLASS);
+                Method generatorMethod = genClass.getMethod(GENERATOR_METHOD, ClassLoader.class, File[].class);
+                generatorMethod.invoke(null, classLoader, new File[]{new File(buildDirectory)});
+            } finally {
+                Thread.currentThread().setContextClassLoader(oldContextClassLoader);
+            }
+        } catch (MojoExecutionException refused) {
+            throw refused;
+        } catch (Exception exception) {
+            logGenerationFailure(exception);
+            throw generationFailure("problem setting building fluxtion class loader", exception);
+        } finally {
+            restoreProperties(previousProperties);
+            CompilerCredentials.restore(previousAuth);
         }
     }
 
@@ -127,6 +146,20 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
         }
         getLog().info("Fluxtion ensure mode: committed processor in " + System.getProperty(ENSURE_SOURCE_DIRECTORY)
                 + (Boolean.parseBoolean(System.getProperty(REGENERATE)) ? ", regeneration forced" : ""));
+    }
+
+    /**
+     * Fails before generation when the project's builder predates ensure mode: an older builder ignores the ensure
+     * properties and would regenerate (or need a key) on every build, silently not doing what the POM asks.
+     */
+    private void requireEnsureSupport(ClassLoader classLoader) throws MojoExecutionException {
+        try {
+            Class.forName(ensureSupportClass, false, classLoader);
+        } catch (ClassNotFoundException | LinkageError oldBuilder) {
+            throw new MojoExecutionException("ensureProcessor needs com.telamin.fluxtion:fluxtion-builder 1.0.87 or"
+                    + " later on the project's build classpath; this project's builder has no ensure support ("
+                    + ensureSupportClass + " not found). Upgrade the builder, or remove ensureProcessor.");
+        }
     }
 
     private static String absolute(String base, String path) {

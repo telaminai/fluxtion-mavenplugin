@@ -122,6 +122,33 @@ public class AbstractFluxtionMojoTest {
                 AbstractFluxtionMojo.generationFailure("fallback", failure).getMessage());
     }
 
+    @Test
+    public void aCodeMatchesOnlyAsAWholeWord() {
+        Assert.assertTrue(AbstractFluxtionMojo.namesCode("FLX-1021  ERROR  stale", "FLX-1021"));
+        Assert.assertTrue(AbstractFluxtionMojo.namesCode("refused (FLX-102): x", "FLX-102"));
+        Assert.assertFalse(AbstractFluxtionMojo.namesCode("FLX-1021  ERROR  stale", "FLX-102"));
+        Assert.assertFalse(AbstractFluxtionMojo.namesCode("see FLX-102-b", "FLX-102"));
+        Exception failure = new java.lang.reflect.InvocationTargetException(
+                new FabricatedDiagnosticException("FLX-102", "unlike FLX-1021, this one", null));
+        Assert.assertEquals("FLX-102  unlike FLX-1021, this one",
+                AbstractFluxtionMojo.generationFailure("fallback", failure).getMessage());
+    }
+
+    @Test
+    public void aCodedFailureLogsItsStackAtDebugAndAnyOtherAtError() {
+        RecordingLog log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.logGenerationFailure(staleProcessorFailure());
+        Assert.assertTrue(log.all(), log.all().startsWith("DEBUG "));
+        log.lines.clear();
+        mojo.logGenerationFailure(new java.lang.reflect.InvocationTargetException(new IllegalStateException("x")));
+        Assert.assertTrue(log.all(), log.all().startsWith("ERROR "));
+        log.lines.clear();
+        mojo.logGenerationFailure(new java.lang.reflect.InvocationTargetException(
+                new RuntimeException(new java.io.IOException(CAPABILITY_REFUSAL))));
+        Assert.assertTrue(log.all(), log.all().startsWith("ERROR "));
+    }
+
     private static class ConcreteFluxtionMojo extends AbstractFluxtionMojo {
         @Override
         public void execute() throws MojoExecutionException {
