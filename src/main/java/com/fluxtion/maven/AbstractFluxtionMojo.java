@@ -88,15 +88,69 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
         return found == null ? null : CompilerAuthClient.printable(found);
     }
 
+    /** A Fluxtion diagnostic code, e.g. {@code FLX-1022}. */
+    private static final Pattern DIAGNOSTIC_CODE = Pattern.compile("FLX-\\d{3,}");
+
+    /**
+     * The builder's coded refusal ({@code DiagnosticBuildException}, or any {@code DiagnosticCarrier}), found in the
+     * cause chain by its public {@code getCode()}: the plugin does not link the builder, which is loaded from the
+     * project's classpath. The outermost carrier's message, since the scan entry point wraps the diagnostic once and
+     * words that message as the banner line ({@code FLX-1022  ERROR  ...}); prefixed with the code when the message
+     * does not already name it. Null when no carrier is found. Control characters are replaced.
+     */
+    static String builderDiagnostic(Throwable failure) {
+        int depth = 0;
+        for (Throwable t = failure; t != null && depth++ < 32; t = t.getCause()) {
+            String code = diagnosticCode(t);
+            if (code != null) {
+                String m = t.getMessage();
+                String line = m == null || m.trim().isEmpty() ? code : namesCode(m, code) ? m : code + "  " + m;
+                return CompilerAuthClient.printable(line);
+            }
+            if (t.getCause() == t) break;
+        }
+        return null;
+    }
+
+    /** The code as a whole word: {@code FLX-102} is not named by a message about {@code FLX-1021}. */
+    static boolean namesCode(String message, String code) {
+        return Pattern.compile("(?<![\\w-])" + Pattern.quote(code) + "(?![\\w-])").matcher(message).find();
+    }
+
+    /**
+     * Logs a failed builder call. A coded diagnostic has already been rendered by the builder and becomes the failure
+     * message, so its stack trace is debug only; any other failure keeps the stack trace at error, as before.
+     */
+    protected void logGenerationFailure(Exception failure) {
+        if (compilerRefusal(failure) == null && builderDiagnostic(failure) != null) {
+            getLog().debug(failure);
+        } else {
+            getLog().error(failure);
+        }
+    }
+
+    private static String diagnosticCode(Throwable t) {
+        try {
+            Object code = t.getClass().getMethod("getCode").invoke(t);
+            return code instanceof String && DIAGNOSTIC_CODE.matcher((String) code).matches() ? (String) code : null;
+        } catch (ReflectiveOperationException | RuntimeException notACarrier) {
+            return null;
+        }
+    }
+
     /**
      * The build's failure: the compiler's own refusal as the message when there is one (a plan limit, a used-up
-     * allowance, a refused credential), so the reason is the line Maven prints rather than buried in a stack trace;
+     * allowance, a refused credential), then the builder's coded diagnostic (e.g. FLX-1022, regeneration needed
+     * without a credential in ensure mode), so the reason is the line Maven prints rather than buried in a stack trace;
      * otherwise {@code fallback}, as before.
      */
     static MojoExecutionException generationFailure(String fallback, Exception failure) {
         String refusal = compilerRefusal(failure);
-        return new MojoExecutionException(refusal == null ? fallback
-                : "The Fluxtion compiler refused this build. " + refusal, failure);
+        if (refusal != null) {
+            return new MojoExecutionException("The Fluxtion compiler refused this build. " + refusal, failure);
+        }
+        String diagnostic = builderDiagnostic(failure);
+        return new MojoExecutionException(diagnostic == null ? fallback : diagnostic, failure);
     }
 
     protected URLClassLoader buildFluxtionClassLoader() throws MalformedURLException, DependencyResolutionRequiredException {

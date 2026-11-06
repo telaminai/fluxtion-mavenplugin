@@ -16,6 +16,11 @@ final class RecordingLog extends SystemStreamLog {
     }
 
     @Override
+    public void debug(Throwable error) {
+        lines.add("DEBUG " + error);
+    }
+
+    @Override
     public void info(CharSequence content) {
         lines.add("INFO " + content);
     }

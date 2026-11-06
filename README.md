@@ -90,6 +90,22 @@ Scans compiled project classes for Fluxtion builder definitions and generates ev
 ```
 *   `buildDirectory`: Directory to scan for classes (default: `target/classes`).
 
+**Ensure mode** (requires `fluxtion-builder` 1.0.87 or later; an older builder is refused before generation).
+With `ensureProcessor` set, the build reuses the committed processor when the compile request is unchanged, sending
+nothing and needing no sign-in. When the request has changed it regenerates (signed in) and stamps the result, or, when
+not signed in, fails with `FLX-1022` as the build's failure message.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ensureProcessor` (`-Dfluxtion.ensureProcessor`) | Reuse the committed processor when the request is unchanged. | `false` |
+| `ensureSourceDirectory` | Where the committed processor source lives. | `${project.build.sourceDirectory}` |
+| `ensureResourcesDirectory` | Where the committed request stamp (`<Processor>.fluxtion-request.json`) lives. | `${project.basedir}/src/main/resources` |
+| `relocatableBase` | Optional package prefix the request digest ignores, so a repackaged processor still matches. | none |
+| `-Dfluxtion.regenerate=true` | Regenerate even when the request is unchanged (also read from a profile property). | unset |
+
+With `ensureProcessor` set, a project whose `fluxtion-builder` has no ensure support fails at once with a message
+naming the version it needs, rather than regenerating on every build.
+
 #### 2. `springToFluxtion`
 Generates a Fluxtion event processor from a Spring context definition.
 
@@ -139,6 +155,69 @@ Generates event processors from YAML configuration files.
 </plugin>
 ```
 *   `fluxtionConfigFiles`: (Required) Array of YAML configuration files to process.
+
+#### 4. `promote`
+Promotes a scan written to a staging directory (`<outputDirectory>`/`<resourcesDirectory>` under `target/`) into the
+project once the staged processor has compiled. Bind it at `process-classes`, after the scan and the compile of the
+staging sources.
+
+```xml
+<execution>
+    <id>promote-generated</id>
+    <phase>process-classes</phase>
+    <goals><goal>promote</goal></goals>
+    <configuration>
+        <generatedPackage>com.example.myapp.generated</generatedPackage>
+    </configuration>
+</execution>
+```
+
+*   The staged resources are always copied to `target/classes`, so the jar has this build's GraphML.
+*   When the builder reused every staged processor (it writes `<Processor>.fluxtion-reused` beside each), `src/` is not
+    touched.
+*   Otherwise the generator's files are replaced one by one: each is written to a temporary file and renamed (a
+    replaced file keeps its permissions, a new one gets the default ones), and unchanged files are not rewritten.
+*   Only the generator's files are written or deleted: in the package's own directory, never a sub-package,
+    `<Processor>.java` in the sources and `<Processor>.java`, `.graphml`, `.png` and `.fluxtion-request.json` in the
+    resources, for a processor that is staged or has a committed stamp. Existing destinations require a valid
+    committed request stamp identifying that processor (digest format 1 or 2), or an unchanged prior promotion
+    ownership marker; an unstamped same-name user file
+    refuses the entire promotion before any write. Move or rename conflicting user files, or restore their original
+    stamp if they were generated. A stamped processor the scan no longer writes
+    (a renamed one) has its files deleted; any other file in the package is left alone. PNG files are never promoted to
+    `src/`, and the marker is never copied.
+*   A symbolic link on the way to the generated package (below `sourceDirectory`/`resourcesDirectory`), or as one of a
+    processor's files, fails the build before anything is written.
+*   `generatedPackage` must be a Java package name. Staging that holds no processor in it fails the build and touches
+    nothing. Resource destinations below `target/classes` receive the same link checks, including on reuse.
+    `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips the goal.
+*   Staging must be emptied before every scan, for example with a `maven-clean-plugin` execution at `initialize`:
+    Successful promotion writes `<Processor>.fluxtion-owned.json` beside the resources **after** the processor's
+    files have been written. Keep this file with the generated sources: it records content hashes, including for
+    custom-template output that has no reusable request stamp. A later user edit or interrupted promotion refuses
+    automatic replacement; preserve the edits or restore the previous generated files before retrying. CRLF/LF
+    conversion alone is accepted. Ownership does not certify that the processor can be reused; the builder's
+    request stamp still controls that decision.
+
+    `promote` promotes every processor it finds there, so a previous build's leftovers would be promoted with this
+    one's. `promote` does not clear staging itself, because a failed scan or compile stops the build before it runs
+    and would leave staging behind anyway; only a clear before the scan covers every case.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `generatedPackage` (`-Dfluxtion.generatedPackage`) | The package the scan generates into; required. | none |
+| `stagingSourceDirectory` | Staged sources. | `${project.build.directory}/fluxtion-staging/java` |
+| `stagingResourcesDirectory` | Staged resources. | `${project.build.directory}/fluxtion-staging/resources` |
+| `sourceDirectory` | Where sources are promoted. | `${project.build.sourceDirectory}` |
+| `resourcesDirectory` | Where resources are promoted. | `${project.basedir}/src/main/resources` |
+| `classesDirectory` | Where staged resources are copied for the jar. | `${project.build.outputDirectory}` |
+
+### Parallel builds (`-T`)
+The builder reads its directories, ensure settings and credential from JVM-wide system properties, so the `scan`,
+`springToFluxtion` and `yamlToFluxtion` goals take turns: one module's builder call (set, generate, restore) runs at a
+time, and the other modules' Fluxtion goals wait for it. The lock belongs to the plugin's class realm: it serialises
+this plugin's goals across modules that use the same plugin version, not two different versions of the plugin in one
+build, nor another plugin that sets the same properties.
 
 ## Signing in to the Fluxtion compiler
 

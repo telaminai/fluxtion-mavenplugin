@@ -17,6 +17,7 @@ final class Json {
     private final String s;
     private int i;
     private int depth;
+    private boolean strict;
 
     private Json(String s) {
         this.s = s;
@@ -33,6 +34,18 @@ final class Json {
             throw new IllegalArgumentException("not a JSON object");
         }
         return (Map<String, Object>) v;
+    }
+
+    /** Strict JSON for persisted ownership metadata: reject duplicate keys and invalid string escapes. */
+    static Map<String, Object> objectStrict(String text) {
+        Json p = new Json(text == null ? "" : text);
+        p.strict = true;
+        p.ws();
+        Object value = p.value();
+        p.ws();
+        if (!(value instanceof Map) || p.i != p.s.length()) throw p.fail();
+        @SuppressWarnings("unchecked") Map<String, Object> result = (Map<String, Object>) value;
+        return result;
     }
 
     /** A JSON string literal for {@code v}. */
@@ -105,6 +118,7 @@ final class Json {
             ws();
             expect(':');
             ws();
+            if (strict && m.containsKey(k)) throw fail();
             m.put(k, value());
             ws();
             char c = next();
@@ -146,6 +160,7 @@ final class Json {
             char c = next();
             if (c == '"') return b.toString();
             if (c != '\\') {
+                if (strict && c < 0x20) throw fail();
                 b.append(c);
                 continue;
             }
@@ -165,7 +180,9 @@ final class Json {
                     }
                     i += 4;
                     break;
-                default: b.append(e);
+                default:
+                    if (strict && e != '"' && e != '\\' && e != '/') throw fail();
+                    b.append(e);
             }
         }
     }

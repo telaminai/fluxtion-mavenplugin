@@ -244,6 +244,24 @@ final class CompilerCredentials {
         return previous;
     }
 
+    /**
+     * Serialises a whole goal's builder call (set properties, invoke, restore) against every other goal in this JVM,
+     * so parallel modules ({@code mvn -T}) never see each other's output, ensure or credential properties. Reentrant:
+     * {@link #apply} taking it again inside is fine, {@link #restore} releases only that inner hold.
+     */
+    static void lockBuilderProperties() {
+        BUILDER_PROPERTIES.lock();
+    }
+
+    static void unlockBuilderProperties() {
+        if (BUILDER_PROPERTIES.isHeldByCurrentThread()) BUILDER_PROPERTIES.unlock();
+    }
+
+    /** Whether any thread holds the builder-properties lock; false between goals. */
+    static boolean builderPropertiesLocked() {
+        return BUILDER_PROPERTIES.isLocked();
+    }
+
     /** Puts back the values {@link #apply} replaced, so no credential outlives the builder call. */
     static void restore(Map<String, String> previous) {
         if (previous.isEmpty()) return;
