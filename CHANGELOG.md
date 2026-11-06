@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.3.2] - 2026-11-06
 
 - Refuse promotion over existing files without a valid committed processor stamp or unchanged prior promotion marker; staging alone does not establish ownership.
 - Record promotion ownership separately from reuse stamps, so custom-template output can be promoted repeatedly while subsequent user edits and interrupted writes fail safely.

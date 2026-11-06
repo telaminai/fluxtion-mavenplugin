@@ -90,7 +90,7 @@ Scans compiled project classes for Fluxtion builder definitions and generates ev
 ```
 *   `buildDirectory`: Directory to scan for classes (default: `target/classes`).
 
-**Ensure mode** (requires `fluxtion-builder` 1.0.87 or later; an older builder ignores it and generates as before).
+**Ensure mode** (requires `fluxtion-builder` 1.0.87 or later; an older builder is refused before generation).
 With `ensureProcessor` set, the build reuses the committed processor when the compile request is unchanged, sending
 nothing and needing no sign-in. When the request has changed it regenerates (signed in) and stamps the result, or, when
 not signed in, fails with `FLX-1022` as the build's failure message.
