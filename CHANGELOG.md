@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-06
+
 ### Upgrading from ≤1.0.86
 - When adopting an unstamped generated processor into an ensure/promote build, preserve a backup and move the exact Java/resource files listed by the refusal out of the source directories, then build again. The build writes request and promotion-ownership stamps; generated-looking files are never adopted automatically.
 
