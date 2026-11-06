@@ -377,6 +377,7 @@ public class FluxtionPromoteMojoTest {
     @Test
     public void previousAndCurrentStampFormatsPermitOwnedReplacement() throws Exception {
         for (String version : new String[]{"1", "2"}) {
+            Files.deleteIfExists(srcResources.resolve(PKG).resolve("DemoProcessor" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX));
             write(srcJava, "DemoProcessor.java", "old generated");
             write(srcResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor").replace("digest/1", "digest/" + version));
             write(stagingJava, "DemoProcessor.java", "new generated");
@@ -412,6 +413,83 @@ public class FluxtionPromoteMojoTest {
         assertRefusedNaming(linked);
         Assert.assertEquals("external", read(outside));
         Assert.assertFalse(Files.exists(srcJava));
+    }
+
+
+    @Test
+    public void unstampedCustomTemplateOutputCanBePromotedRepeatedly() throws Exception {
+        write(stagingJava, "Custom.java", "generated answer 1");
+        mojo.execute();
+        Path ownership = srcResources.resolve(PKG).resolve("Custom" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX);
+        Assert.assertTrue(Files.isRegularFile(ownership));
+        Assert.assertFalse(Files.exists(srcResources.resolve(PKG).resolve("Custom.fluxtion-request.json")));
+        write(stagingJava, "Custom.java", "generated answer 2");
+        mojo.execute();
+        Assert.assertEquals("generated answer 2", read(srcJava.resolve(PKG).resolve("Custom.java")));
+    }
+
+    @Test
+    public void userEditAfterPromotionRefusesEvenWithAValidRequestStamp() throws Exception {
+        write(stagingJava, "DemoProcessor.java", "generated source");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
+        mojo.execute();
+        Path user = write(srcJava, "DemoProcessor.java", "user edit after promotion");
+        Path marker = srcResources.resolve(PKG).resolve("DemoProcessor" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX);
+        write(stagingJava, "DemoProcessor.java", "new generation");
+        assertRefusedNaming(marker);
+        Assert.assertEquals("user edit after promotion", read(user));
+    }
+
+    @Test
+    public void interruptedMarkerPublicationCannotAuthorizePartialPromotion() throws Exception {
+        org.junit.Assume.assumeTrue(java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        write(stagingJava, "Custom.java", "first generation");
+        mojo.execute();
+        Path directory = srcResources.resolve(PKG);
+        Path marker = directory.resolve("Custom" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX);
+        byte[] priorMarker = Files.readAllBytes(marker);
+        Set<PosixFilePermission> previous = Files.getPosixFilePermissions(directory);
+        write(stagingJava, "Custom.java", "second generation");
+        try {
+            Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("r-xr-xr-x"));
+            try { mojo.execute(); Assert.fail("marker publication must fail"); }
+            catch (MojoExecutionException expected) { Assert.assertTrue(expected.getMessage().contains("promote failed")); }
+        } finally { Files.setPosixFilePermissions(directory, previous); }
+        Assert.assertArrayEquals(priorMarker, Files.readAllBytes(marker));
+        Assert.assertEquals("second generation", read(srcJava.resolve(PKG).resolve("Custom.java")));
+        assertRefusedNaming(marker);
+    }
+
+    @Test
+    public void renamedCustomProcessorDeletesOnlyItsUneditedOwnedFiles() throws Exception {
+        write(stagingJava, "Custom.java", "first generation");
+        mojo.execute();
+        Files.delete(stagingJava.resolve(PKG).resolve("Custom.java"));
+        write(stagingJava, "Renamed.java", "next generation");
+        Path user = write(srcJava, "Notes.java", "user notes");
+        mojo.execute();
+        Assert.assertFalse(Files.exists(srcJava.resolve(PKG).resolve("Custom.java")));
+        Assert.assertFalse(Files.exists(srcResources.resolve(PKG).resolve("Custom" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX)));
+        Assert.assertEquals("user notes", read(user));
+    }
+
+    @Test
+    public void lineEndingConversionDoesNotInvalidatePromotionOwnership() throws Exception {
+        write(stagingJava, "Custom.java", "first generation\n");
+        mojo.execute();
+        write(srcJava, "Custom.java", "first generation\r\n");
+        write(stagingJava, "Custom.java", "next generation\n");
+        mojo.execute();
+        Assert.assertEquals("next generation\n", read(srcJava.resolve(PKG).resolve("Custom.java")));
+    }
+
+    @Test
+    public void malformedPromotionOwnershipDoesNotFallBackToRequestStamp() throws Exception {
+        commit();
+        Path marker = write(srcResources, "DemoProcessor" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX, "{broken");
+        write(stagingJava, "DemoProcessor.java", "new generated");
+        assertRefusedNaming(marker);
+        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
     }
 
     @Test(expected = MojoExecutionException.class)

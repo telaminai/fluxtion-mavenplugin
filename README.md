@@ -180,7 +180,8 @@ staging sources.
 *   Only the generator's files are written or deleted: in the package's own directory, never a sub-package,
     `<Processor>.java` in the sources and `<Processor>.java`, `.graphml`, `.png` and `.fluxtion-request.json` in the
     resources, for a processor that is staged or has a committed stamp. Existing destinations require a valid
-    committed ownership stamp identifying that processor (digest format 1 or 2); an unstamped same-name user file
+    committed request stamp identifying that processor (digest format 1 or 2), or an unchanged prior promotion
+    ownership marker; an unstamped same-name user file
     refuses the entire promotion before any write. Move or rename conflicting user files, or restore their original
     stamp if they were generated. A stamped processor the scan no longer writes
     (a renamed one) has its files deleted; any other file in the package is left alone. PNG files are never promoted to
@@ -191,6 +192,13 @@ staging sources.
     nothing. Resource destinations below `target/classes` receive the same link checks, including on reuse.
     `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips the goal.
 *   Staging must be emptied before every scan, for example with a `maven-clean-plugin` execution at `initialize`:
+    Successful promotion writes `<Processor>.fluxtion-owned.json` beside the resources **after** the processor's
+    files have been written. Keep this file with the generated sources: it records content hashes, including for
+    custom-template output that has no reusable request stamp. A later user edit or interrupted promotion refuses
+    automatic replacement; preserve the edits or restore the previous generated files before retrying. CRLF/LF
+    conversion alone is accepted. Ownership does not certify that the processor can be reused; the builder's
+    request stamp still controls that decision.
+
     `promote` promotes every processor it finds there, so a previous build's leftovers would be promoted with this
     one's. `promote` does not clear staging itself, because a failed scan or compile stops the build before it runs
     and would leave staging behind anyway; only a clear before the scan covers every case.

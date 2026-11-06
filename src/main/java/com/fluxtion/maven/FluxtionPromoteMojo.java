@@ -19,6 +19,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.TreeSet;
@@ -40,7 +43,9 @@ import java.util.stream.Stream;
  * <p><b>Only the generator's files are ever written or deleted.</b> Those are, in the package's own directory and never
  * below it, {@code <Processor>.java} in the sources and {@code <Processor>.java}, {@code .graphml}, {@code .png} and
  * {@code .fluxtion-request.json} in the resources, for a processor named by staging or by a committed stamp. Existing destinations require a valid committed
- * ownership stamp identifying that processor; a staged name alone cannot authorize replacement. A
+ * ownership stamp identifying that processor or an unchanged prior promotion marker; a staged name alone cannot
+ * authorize replacement. After successful promotion, a separate content-hashed ownership marker also supports
+ * custom-template output, which intentionally has no reusable request stamp. A
  * processor's file the scan no longer writes (a renamed processor) is deleted; anything else in the package, and every
  * sub-package, is left alone. PNG files are never promoted to {@code src/}, and the marker is never copied anywhere.
  * A symbolic link below a configured source or classes root, or at a destination file, refuses the build before
@@ -56,6 +61,8 @@ public class FluxtionPromoteMojo extends AbstractMojo {
     public static final String REUSED_MARKER_SUFFIX = ".fluxtion-reused";
     /** The committed stamp; a processor named by one is the generator's, so its files may be replaced or deleted. */
     public static final String STAMP_SUFFIX = ".fluxtion-request.json";
+    /** Ownership is independent of reuse: custom templates intentionally have no reusable request stamp. */
+    static final String OWNERSHIP_SUFFIX = ".fluxtion-owned.json";
     /** The suffixes of a processor's files in the resources package, as the builder writes them. */
     private static final List<String> RESOURCE_SUFFIXES = Arrays.asList(".java", ".graphml", ".png", STAMP_SUFFIX);
     private static final Pattern PACKAGE = Pattern.compile(
@@ -119,12 +126,14 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                 requireNoLinks(Paths.get(sourceDirectory), packagePath);
                 requireNoLinks(Paths.get(resourcesDirectory), packagePath);
                 known.addAll(namesEndingWith(srcResourcePackage, STAMP_SUFFIX));
+                known.addAll(namesEndingWith(srcResourcePackage, OWNERSHIP_SUFFIX));
                 known.removeAll(reused);
                 for (String processor : known) {
                     requireRegularOrAbsent(srcJavaPackage.resolve(processor + ".java"));
                     for (String suffix : RESOURCE_SUFFIXES) {
                         requireRegularOrAbsent(srcResourcePackage.resolve(processor + suffix));
                     }
+                    requireRegularOrAbsent(srcResourcePackage.resolve(processor + OWNERSHIP_SUFFIX));
                     requireOwnedOrNew(srcJavaPackage, srcResourcePackage, pkg, processor);
                 }
             }
@@ -154,6 +163,8 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                 for (String suffix : RESOURCE_SUFFIXES) {
                     replace(stagedResourcePackage, srcResourcePackage, processor + suffix, src);
                 }
+                // Last for this processor: an interrupted promotion cannot bless a partially written result.
+                publishOwnership(srcJavaPackage, srcResourcePackage, pkg, processor, src);
             }
             getLog().info("Fluxtion promote: " + pkg + " generated (" + String.join(", ", staged) + "); src/ " + src
                     + ", " + src.deleted + " deleted; " + classes + " in " + classesDirectory);
@@ -168,7 +179,24 @@ public class FluxtionPromoteMojo extends AbstractMojo {
         boolean existing = Files.exists(javaDir.resolve(name + ".java"), LinkOption.NOFOLLOW_LINKS);
         for (String suffix : RESOURCE_SUFFIXES)
             existing |= Files.exists(resourceDir.resolve(name + suffix), LinkOption.NOFOLLOW_LINKS);
+        Path ownership = resourceDir.resolve(name + OWNERSHIP_SUFFIX);
+        existing |= Files.exists(ownership, LinkOption.NOFOLLOW_LINKS);
         if (!existing) return;
+        if (Files.exists(ownership, LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                Map<String, Object> fields = Json.objectStrict(new String(Files.readAllBytes(ownership), StandardCharsets.UTF_8));
+                Map<String, String> actual = ownedFiles(javaDir, resourceDir, name);
+                if (fields.keySet().equals(new TreeSet<>(Arrays.asList("format", "processor", "files")))
+                        && "fluxtion-promotion/1".equals(fields.get("format"))
+                        && (pkg + "." + name).equals(fields.get("processor")) && !actual.isEmpty()
+                        && actual.equals(fields.get("files"))) return;
+            } catch (IllegalArgumentException invalid) {
+                // A malformed marker cannot authorize replacement.
+            }
+            throw new MojoExecutionException("Fluxtion promote: files for " + pkg + "." + name
+                    + " differ from their recorded promotion ownership at " + ownership
+                    + "; preserve your edits or restore the previous generated files before retrying. Nothing promoted.");
+        }
         Path stamp = resourceDir.resolve(name + STAMP_SUFFIX);
         if (Files.isRegularFile(stamp, LinkOption.NOFOLLOW_LINKS)) {
             try {
@@ -189,6 +217,52 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                 + " have no valid committed ownership stamp at " + stamp
                 + "; refusing to overwrite or delete them. Move or rename the conflicting files, or restore"
                 + " their original stamp if they were generated. Nothing promoted.");
+    }
+
+    /** Source/resource hashes make a previously promoted file's subsequent user edits visible. */
+    private static Map<String, String> ownedFiles(Path javaDir, Path resourceDir, String name) throws IOException {
+        Map<String, String> files = new TreeMap<>();
+        Path source = javaDir.resolve(name + ".java");
+        if (Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) files.put("source/" + source.getFileName(), contentHash(source));
+        for (String suffix : RESOURCE_SUFFIXES) {
+            Path file = resourceDir.resolve(name + suffix);
+            if (Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) files.put("resources/" + file.getFileName(), contentHash(file));
+        }
+        return files;
+    }
+
+    private static String contentHash(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        // All promoted files are text (PNGs are removed); Git's CRLF conversion is not a user edit.
+        try {
+            String text = StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+            bytes = text.replace("\r\n", "\n").getBytes(StandardCharsets.UTF_8);
+        } catch (java.nio.charset.CharacterCodingException binary) {
+            // Non-UTF8 content retains its byte identity.
+        }
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(bytes);
+            StringBuilder hex = new StringBuilder();
+            for (byte b : hash) hex.append(String.format(Locale.ROOT, "%02x", b & 0xff));
+            return hex.toString();
+        } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
+    }
+
+    private static void publishOwnership(Path javaDir, Path resourceDir, String pkg, String name, Counts counts) throws IOException {
+        Map<String, String> files = ownedFiles(javaDir, resourceDir, name);
+        Path destination = resourceDir.resolve(name + OWNERSHIP_SUFFIX);
+        if (files.isEmpty()) {
+            Files.deleteIfExists(destination);
+            return;
+        }
+        StringBuilder json = new StringBuilder("{\n  \"format\": \"fluxtion-promotion/1\",\n  \"processor\": ")
+                .append(Json.quote(pkg + "." + name)).append(",\n  \"files\": {");
+        int at = 0;
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            json.append(at++ == 0 ? "\n" : ",\n").append("    ").append(Json.quote(entry.getKey())).append(": ").append(Json.quote(entry.getValue()));
+        }
+        json.append("\n  }\n}\n");
+        promoteBytes(json.toString().getBytes(StandardCharsets.UTF_8), destination, counts);
     }
 
     private static boolean digest(Object value) {
@@ -257,7 +331,10 @@ public class FluxtionPromoteMojo extends AbstractMojo {
 
     /** Temporary file then rename, so a reader never sees a half-written file; unchanged bytes are not rewritten. */
     static void promote(Path from, Path to, Counts counts) throws IOException {
-        byte[] bytes = Files.readAllBytes(from);
+        promoteBytes(Files.readAllBytes(from), to, counts);
+    }
+
+    private static void promoteBytes(byte[] bytes, Path to, Counts counts) throws IOException {
         if (Files.isRegularFile(to) && Arrays.equals(bytes, Files.readAllBytes(to))) {
             counts.unchanged++;
             return;
