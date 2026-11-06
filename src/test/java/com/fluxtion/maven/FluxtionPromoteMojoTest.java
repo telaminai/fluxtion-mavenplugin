@@ -59,10 +59,17 @@ public class FluxtionPromoteMojoTest {
         return new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
     }
 
+    private static String stamp(String processor) {
+        return "{\"format\":\"fluxtion-request-digest/1\",\"processor\":\"com.acme.demo.generated." + processor
+            + "\",\"requestDigest\":\"" + String.join("", java.util.Collections.nCopies(64, "a"))
+            + "\",\"sourceDigest\":\"" + String.join("", java.util.Collections.nCopies(64, "b"))
+            + "\",\"signed\":false,\"relocatableBase\":null}";
+    }
+
     private void commit() throws IOException {
         write(srcJava, "DemoProcessor.java", "committed source");
         write(srcResources, "DemoProcessor.graphml", "committed graphml");
-        write(srcResources, "DemoProcessor.fluxtion-request.json", "committed stamp");
+        write(srcResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
     }
 
     @Test
@@ -70,7 +77,7 @@ public class FluxtionPromoteMojoTest {
         commit();
         write(stagingJava, "DemoProcessor.java", "committed source");
         write(stagingResources, "DemoProcessor.graphml", "regenerated graphml");
-        write(stagingResources, "DemoProcessor.fluxtion-request.json", "committed stamp");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
         write(stagingResources, "DemoProcessor" + FluxtionPromoteMojo.REUSED_MARKER_SUFFIX, "");
         Path committedSource = srcJava.resolve(PKG).resolve("DemoProcessor.java");
         FileTime before = Files.getLastModifiedTime(committedSource);
@@ -80,7 +87,7 @@ public class FluxtionPromoteMojoTest {
         Assert.assertEquals("committed graphml", read(srcResources.resolve(PKG).resolve("DemoProcessor.graphml")));
         Assert.assertEquals(before, Files.getLastModifiedTime(committedSource));
         Assert.assertEquals("regenerated graphml", read(classes.resolve(PKG).resolve("DemoProcessor.graphml")));
-        Assert.assertEquals("committed stamp", read(classes.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertEquals(stamp("DemoProcessor"), read(classes.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
         Assert.assertFalse(Files.exists(classes.resolve(PKG).resolve("DemoProcessor.fluxtion-reused")));
         Assert.assertFalse(Files.exists(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-reused")));
     }
@@ -92,7 +99,7 @@ public class FluxtionPromoteMojoTest {
         write(srcResources, "DemoProcessor.png", "old picture");
         write(stagingJava, "DemoProcessor.java", "new source");
         write(stagingResources, "DemoProcessor.graphml", "committed graphml");
-        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
         write(stagingResources, "DemoProcessor.png", "picture");
         Path unchanged = srcResources.resolve(PKG).resolve("DemoProcessor.graphml");
         FileTime before = Files.getLastModifiedTime(unchanged);
@@ -103,7 +110,7 @@ public class FluxtionPromoteMojoTest {
         Path pkg = srcJava.resolve(PKG);
         Assert.assertEquals("new source", read(pkg.resolve("DemoProcessor.java")));
         Assert.assertTrue("not the generator's (no stamp), so kept", Files.exists(pkg.resolve("OldProcessor.java")));
-        Assert.assertEquals("new stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertEquals(stamp("DemoProcessor"), read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
         Assert.assertEquals("unchanged bytes are not rewritten", before, Files.getLastModifiedTime(unchanged));
         Assert.assertFalse("PNG is never promoted to src", Files.exists(srcResources.resolve(PKG).resolve("DemoProcessor.png")));
         Assert.assertEquals("picture", read(classes.resolve(PKG).resolve("DemoProcessor.png")));
@@ -114,17 +121,18 @@ public class FluxtionPromoteMojoTest {
     public void aPartlyReusedPackageIsPromotedAndTheReusedProcessorKeepsItsBytes() throws Exception {
         commit();
         write(srcJava, "OtherProcessor.java", "other committed");
+        write(srcResources, "OtherProcessor.fluxtion-request.json", stamp("OtherProcessor"));
         write(stagingJava, "DemoProcessor.java", "committed source");
         write(stagingJava, "OtherProcessor.java", "other regenerated");
         write(stagingResources, "DemoProcessor" + FluxtionPromoteMojo.REUSED_MARKER_SUFFIX, "");
         write(stagingResources, "DemoProcessor.graphml", "committed graphml");
-        write(stagingResources, "DemoProcessor.fluxtion-request.json", "committed stamp");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
 
         mojo.execute();
 
         Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
         Assert.assertEquals("other regenerated", read(srcJava.resolve(PKG).resolve("OtherProcessor.java")));
-        Assert.assertEquals("committed stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertEquals(stamp("DemoProcessor"), read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
     }
 
     @Test
@@ -169,6 +177,7 @@ public class FluxtionPromoteMojoTest {
     public void subPackageOfGeneratedPackageIsKept() throws Exception {
         Path user = put(srcJava.resolve(PKG).resolve("support/Helper.java"), "user code");
         write(srcJava, "DemoProcessor.java", "old");
+        write(srcResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
         write(stagingJava, "DemoProcessor.java", "new");
         mojo.execute();
         Assert.assertTrue("sub-package user file deleted by promote", Files.exists(user));
@@ -202,10 +211,10 @@ public class FluxtionPromoteMojoTest {
         // a renamed processor: committed with a stamp, no longer staged
         Path oldSource = write(srcJava, "OldProcessor.java", "old");
         Path oldGraph = write(srcResources, "OldProcessor.graphml", "old");
-        Path oldStamp = write(srcResources, "OldProcessor.fluxtion-request.json", "old");
+        Path oldStamp = write(srcResources, "OldProcessor.fluxtion-request.json", stamp("OldProcessor"));
         Path backup = write(srcJava, "OldProcessor.java.backup", "kept");
         write(stagingJava, "DemoProcessor.java", "new source");
-        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
 
         mojo.execute();
 
@@ -227,7 +236,7 @@ public class FluxtionPromoteMojoTest {
         write(stagingJava, "OtherProcessor.java", "other generated");
         mojo.execute();
         Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
-        Assert.assertEquals("committed stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertEquals(stamp("DemoProcessor"), read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
         Assert.assertEquals("other generated", read(srcJava.resolve(PKG).resolve("OtherProcessor.java")));
     }
 
@@ -243,15 +252,16 @@ public class FluxtionPromoteMojoTest {
         Path reference = write(srcResources, "reference.txt", "x");
         Set<PosixFilePermission> normal = Files.getPosixFilePermissions(reference);
         write(stagingJava, "DemoProcessor.java", "new source");
-        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
-        Files.delete(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json"));
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
+        write(stagingJava, "NewProcessor.java", "new processor");
+        write(stagingResources, "NewProcessor.fluxtion-request.json", stamp("NewProcessor"));
 
         mojo.execute();
 
         Assert.assertEquals("new source", read(replaced));
         Assert.assertEquals("a replaced file keeps its permissions", custom, Files.getPosixFilePermissions(replaced));
-        Path created = srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json");
-        Assert.assertEquals("new stamp", read(created));
+        Path created = srcResources.resolve(PKG).resolve("NewProcessor.fluxtion-request.json");
+        Assert.assertEquals(stamp("NewProcessor"), read(created));
         Assert.assertEquals("a new file gets the default permissions", normal, Files.getPosixFilePermissions(created));
         Assert.assertEquals("a new class file gets the default permissions", normal,
                 Files.getPosixFilePermissions(classes.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
@@ -282,7 +292,7 @@ public class FluxtionPromoteMojoTest {
         Path outside = put(tmp.getRoot().toPath().resolve("outside/OldProcessor.java"), "outside");
         Path link = srcJava.resolve(PKG).resolve("OldProcessor.java");
         link(link, outside);
-        write(srcResources, "OldProcessor.fluxtion-request.json", "old");
+        write(srcResources, "OldProcessor.fluxtion-request.json", stamp("OldProcessor"));
         write(stagingJava, "DemoProcessor.java", "new source");
         assertRefusedNaming(link);
         Assert.assertTrue(Files.isSymbolicLink(link));
@@ -296,12 +306,12 @@ public class FluxtionPromoteMojoTest {
         Path real = put(tmp.getRoot().toPath().resolve("elsewhere/DemoProcessor.java"), "old source");
         Path link = srcJava.resolve(PKG).resolve("DemoProcessor.java");
         link(link, real);
-        write(srcResources, "DemoProcessor.fluxtion-request.json", "old stamp");
+        write(srcResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
         write(stagingJava, "DemoProcessor.java", "new source");
-        write(stagingResources, "DemoProcessor.fluxtion-request.json", "new stamp");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
         assertRefusedNaming(link);
         Assert.assertEquals("old source", read(real));
-        Assert.assertEquals("old stamp", read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
+        Assert.assertEquals(stamp("DemoProcessor"), read(srcResources.resolve(PKG).resolve("DemoProcessor.fluxtion-request.json")));
         Assert.assertFalse("refused before target/classes is written", Files.exists(classes));
     }
 
@@ -336,6 +346,72 @@ public class FluxtionPromoteMojoTest {
         write(stagingJava, "DemoProcessor.java", "new source");
         mojo.execute();
         Assert.assertEquals("new source", read(realRoot.resolve(PKG).resolve("DemoProcessor.java")));
+    }
+
+
+    @Test
+    public void stagedNameCannotOverwriteUnstampedUserSource() throws Exception {
+        Path user = write(srcJava, "Notes.java", "hand-written user source");
+        write(stagingJava, "Notes.java", "new generated processor");
+        write(stagingResources, "Notes.fluxtion-request.json", stamp("Notes"));
+        assertRefusedNaming(srcResources.resolve(PKG).resolve("Notes.fluxtion-request.json"));
+        Assert.assertEquals("hand-written user source", read(user));
+        Assert.assertFalse(Files.exists(classes));
+    }
+
+    @Test
+    public void malformedOrWrongOwnerStampCannotAuthorizeReplacement() throws Exception {
+        Path user = write(srcJava, "DemoProcessor.java", "user source");
+        write(stagingJava, "DemoProcessor.java", "new generated source");
+        for (String invalid : new String[]{"not json", stamp("SomeoneElse"),
+                stamp("DemoProcessor").replace("digest/1", "digest/999"),
+                stamp("DemoProcessor").replace("{", "{\"signed\":true,"),
+                stamp("DemoProcessor").replace("com.acme", "com\\q.acme")}) {
+            Path record = write(srcResources, "DemoProcessor.fluxtion-request.json", invalid);
+            assertRefusedNaming(record);
+            Assert.assertEquals("user source", read(user));
+            Assert.assertFalse(Files.exists(classes));
+        }
+    }
+
+    @Test
+    public void previousAndCurrentStampFormatsPermitOwnedReplacement() throws Exception {
+        for (String version : new String[]{"1", "2"}) {
+            write(srcJava, "DemoProcessor.java", "old generated");
+            write(srcResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor").replace("digest/1", "digest/" + version));
+            write(stagingJava, "DemoProcessor.java", "new generated");
+            mojo.execute();
+            Assert.assertEquals("new generated", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        }
+    }
+
+    @Test
+    public void linkedClassesPackageRefusesGenerationAndReuseBeforeWriting() throws Exception {
+        commit();
+        write(stagingJava, "DemoProcessor.java", "new source");
+        write(stagingResources, "DemoProcessor.graphml", "new graph");
+        Path outside = tmp.getRoot().toPath().resolve("external");
+        Path victim = put(outside.resolve("DemoProcessor.graphml"), "external user bytes");
+        Path linked = classes.resolve(PKG);
+        link(linked, outside);
+        for (boolean reused : new boolean[]{false, true}) {
+            if (reused) write(stagingResources, "DemoProcessor" + FluxtionPromoteMojo.REUSED_MARKER_SUFFIX, "");
+            assertRefusedNaming(linked);
+            Assert.assertEquals("external user bytes", read(victim));
+            Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        }
+    }
+
+    @Test
+    public void linkedClassesFileRefusesBeforeAnyResourceCopy() throws Exception {
+        write(stagingJava, "DemoProcessor.java", "new source");
+        write(stagingResources, "DemoProcessor.graphml", "new graph");
+        Path outside = put(tmp.getRoot().toPath().resolve("outside.graphml"), "external");
+        Path linked = classes.resolve(PKG).resolve("DemoProcessor.graphml");
+        link(linked, outside);
+        assertRefusedNaming(linked);
+        Assert.assertEquals("external", read(outside));
+        Assert.assertFalse(Files.exists(srcJava));
     }
 
     @Test(expected = MojoExecutionException.class)

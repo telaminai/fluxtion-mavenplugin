@@ -179,13 +179,17 @@ staging sources.
     replaced file keeps its permissions, a new one gets the default ones), and unchanged files are not rewritten.
 *   Only the generator's files are written or deleted: in the package's own directory, never a sub-package,
     `<Processor>.java` in the sources and `<Processor>.java`, `.graphml`, `.png` and `.fluxtion-request.json` in the
-    resources, for a processor that is staged or has a committed stamp. A stamped processor the scan no longer writes
+    resources, for a processor that is staged or has a committed stamp. Existing destinations require a valid
+    committed ownership stamp identifying that processor (digest format 1 or 2); an unstamped same-name user file
+    refuses the entire promotion before any write. Move or rename conflicting user files, or restore their original
+    stamp if they were generated. A stamped processor the scan no longer writes
     (a renamed one) has its files deleted; any other file in the package is left alone. PNG files are never promoted to
     `src/`, and the marker is never copied.
 *   A symbolic link on the way to the generated package (below `sourceDirectory`/`resourcesDirectory`), or as one of a
     processor's files, fails the build before anything is written.
 *   `generatedPackage` must be a Java package name. Staging that holds no processor in it fails the build and touches
-    nothing. `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips the goal.
+    nothing. Resource destinations below `target/classes` receive the same link checks, including on reuse.
+    `-DskipFluxtion` or `-Dfluxtion.promote.skip` skips the goal.
 *   Staging must be emptied before every scan, for example with a `maven-clean-plugin` execution at `initialize`:
     `promote` promotes every processor it finds there, so a previous build's leftovers would be promoted with this
     one's. `promote` does not clear staging itself, because a failed scan or compile stops the build before it runs

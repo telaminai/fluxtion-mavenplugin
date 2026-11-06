@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Refuse promotion over existing files without a valid committed processor ownership stamp; staging alone does not establish ownership.
+- Preflight classes resource destinations for linked directories/files on generation and reuse before any writes.
+
 ### Added
 - `scan` ensure mode: `ensureProcessor` (`-Dfluxtion.ensureProcessor`), `ensureSourceDirectory`,
   `ensureResourcesDirectory` and `relocatableBase`. The build reuses the committed processor when the compile request

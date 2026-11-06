@@ -18,6 +18,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -37,11 +39,12 @@ import java.util.stream.Stream;
  *
  * <p><b>Only the generator's files are ever written or deleted.</b> Those are, in the package's own directory and never
  * below it, {@code <Processor>.java} in the sources and {@code <Processor>.java}, {@code .graphml}, {@code .png} and
- * {@code .fluxtion-request.json} in the resources, for a processor named by the staging or by a committed stamp. A
+ * {@code .fluxtion-request.json} in the resources, for a processor named by staging or by a committed stamp. Existing destinations require a valid committed
+ * ownership stamp identifying that processor; a staged name alone cannot authorize replacement. A
  * processor's file the scan no longer writes (a renamed processor) is deleted; anything else in the package, and every
  * sub-package, is left alone. PNG files are never promoted to {@code src/}, and the marker is never copied anywhere.
- * A symbolic link on the way to the package, or as one of a processor's files, refuses the build before anything is
- * written.
+ * A symbolic link below a configured source or classes root, or at a destination file, refuses the build before
+ * anything is written. Configured roots may themselves be linked.
  *
  * <p>Staging must be emptied before each scan (the staged build clears it at {@code initialize}); this goal promotes
  * whatever processors it finds there.
@@ -122,10 +125,20 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                     for (String suffix : RESOURCE_SUFFIXES) {
                         requireRegularOrAbsent(srcResourcePackage.resolve(processor + suffix));
                     }
+                    requireOwnedOrNew(srcJavaPackage, srcResourcePackage, pkg, processor);
+                }
+            }
+            List<Path> stagedFiles = files(stagedResources);
+            // Preflight every destination before the first write, including reuse builds.
+            for (Path relative : stagedFiles) {
+                if (!relative.getFileName().toString().endsWith(REUSED_MARKER_SUFFIX)) {
+                    Path parent = relative.getParent();
+                    if (parent != null) requireNoLinks(Paths.get(classesDirectory), parent.toString());
+                    requireRegularOrAbsent(Paths.get(classesDirectory).resolve(relative));
                 }
             }
             Counts classes = new Counts();
-            for (Path relative : files(stagedResources)) {
+            for (Path relative : stagedFiles) {
                 if (!relative.getFileName().toString().endsWith(REUSED_MARKER_SUFFIX)) {
                     promote(stagedResources.resolve(relative), Paths.get(classesDirectory).resolve(relative), classes);
                 }
@@ -147,6 +160,39 @@ public class FluxtionPromoteMojo extends AbstractMojo {
         } catch (IOException e) {
             throw new MojoExecutionException("Fluxtion promote failed: " + e.getMessage(), e);
         }
+    }
+
+    /** A staged name alone does not establish ownership of an existing committed file. */
+    private static void requireOwnedOrNew(Path javaDir, Path resourceDir, String pkg, String name)
+            throws IOException, MojoExecutionException {
+        boolean existing = Files.exists(javaDir.resolve(name + ".java"), LinkOption.NOFOLLOW_LINKS);
+        for (String suffix : RESOURCE_SUFFIXES)
+            existing |= Files.exists(resourceDir.resolve(name + suffix), LinkOption.NOFOLLOW_LINKS);
+        if (!existing) return;
+        Path stamp = resourceDir.resolve(name + STAMP_SUFFIX);
+        if (Files.isRegularFile(stamp, LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                Map<String, Object> fields = Json.objectStrict(new String(Files.readAllBytes(stamp), StandardCharsets.UTF_8));
+                Object format = fields.get("format"), base = fields.get("relocatableBase");
+                // V1 can prove prior ownership during upgrade; only the builder decides whether it can be reused.
+                if (fields.keySet().equals(new TreeSet<>(Arrays.asList("format", "processor", "requestDigest",
+                        "sourceDigest", "signed", "relocatableBase")))
+                        && ("fluxtion-request-digest/1".equals(format) || "fluxtion-request-digest/2".equals(format))
+                        && (pkg + "." + name).equals(fields.get("processor"))
+                        && digest(fields.get("requestDigest")) && digest(fields.get("sourceDigest"))
+                        && fields.get("signed") instanceof Boolean && (base == null || base instanceof String)) return;
+            } catch (IllegalArgumentException invalid) {
+                // An unreadable or unrelated file is not evidence of generator ownership.
+            }
+        }
+        throw new MojoExecutionException("Fluxtion promote: existing files for " + pkg + "." + name
+                + " have no valid committed ownership stamp at " + stamp
+                + "; refusing to overwrite or delete them. Move or rename the conflicting files, or restore"
+                + " their original stamp if they were generated. Nothing promoted.");
+    }
+
+    private static boolean digest(Object value) {
+        return value instanceof String && ((String) value).matches("[0-9a-f]{64}");
     }
 
     /**
