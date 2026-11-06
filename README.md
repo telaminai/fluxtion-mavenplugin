@@ -156,6 +156,21 @@ Generates event processors from YAML configuration files.
 ```
 *   `fluxtionConfigFiles`: (Required) Array of YAML configuration files to process.
 
+#### Upgrading generated processors from ≤1.0.86
+
+Older generated processors have no request or promotion-ownership stamps. When moving such a project to an
+ensure/promote build, promotion refuses to replace the existing files. If their Java copies carry the Fluxtion
+generated header, the refusal lists the exact source and resource paths and explains the one-time recovery:
+
+1. Keep a backup and review any local edits.
+2. Move only the listed files outside the source/resource directories; keep authored nodes and other files.
+3. Build again using the project's normal generation command and configured compiler route. Successful generation
+   and promotion write the request and ownership stamps needed by subsequent builds.
+
+The header is only a diagnostic hint. No files are adopted or overwritten automatically. A hand-written file,
+missing recognizable header, or invalid existing stamp still gets the ordinary refusal: preserve the file and
+resolve the conflict instead of assuming it is generated.
+
 #### 4. `promote`
 Promotes a scan written to a staging directory (`<outputDirectory>`/`<resourcesDirectory>` under `target/`) into the
 project once the staged processor has compiled. Bind it at `process-classes`, after the scan and the compile of the
