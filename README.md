@@ -317,7 +317,7 @@ env:
 3. Otherwise, no sign-in. A build in ensure mode whose compile request is unchanged reuses its committed processor
    and sends nothing. A build that must generate stops before sending anything, with the builder's coded line:
    `FLX-1022` in ensure mode (which processor, and why it changed), otherwise
-   `FLX-1023`, "No compiler sign-in found. Run mvn fluxtion:login (or set FLUXTION_API_TOKEN for CI)."
+   `FLX-1023`, "No compiler sign-in found. Run mvn com.telamin.fluxtion:fluxtion-maven-plugin:1.3.4:login (or set FLUXTION_API_TOKEN for CI)."
 
 The plugin runs the builder in token mode (`fluxtion.remote.auth=token`), with or without a credential, so no builder
 it accepts (1.0.82 or later) can fall back to the retired key route; an explicit `-Dfluxtion.remote.auth=session` is

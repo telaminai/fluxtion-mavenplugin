@@ -8,7 +8,7 @@
   (`fluxtion.remote.auth=token`), so it never reads `~/.fluxtion/fluxtion.apiKeyFile` or `-Dfluxtion.apiKey`. A client that relied on the key file must sign in: `mvn fluxtion:login` on a developer machine,
   `FLUXTION_API_TOKEN` in CI.
 - With no sign-in, a build that must generate stops before sending anything with the builder's coded line
-  (`FLX-1023`, "No compiler sign-in found. Run mvn fluxtion:login (or set FLUXTION_API_TOKEN for CI)." from
+  (`FLX-1023`, "No compiler sign-in found. Run mvn com.telamin.fluxtion:fluxtion-maven-plugin:1.3.4:login (or set FLUXTION_API_TOKEN for CI)." from
   fluxtion-builder 1.0.90; `FLX-1022` in ensure mode). An ensure-mode build whose compile request is unchanged still
   reuses its committed processor without a sign-in.
 - Use with `com.telamin.fluxtion:fluxtion-builder` 1.0.90 or later; every generation goal warns, once per build, when

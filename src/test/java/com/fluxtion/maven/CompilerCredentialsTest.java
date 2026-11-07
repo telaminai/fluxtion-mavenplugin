@@ -111,11 +111,11 @@ public class CompilerCredentialsTest {
     /** No credential and the builder refuses with FLX-1023: that line is the build failure, nothing else. */
     @Test
     public void withNoCredentialTheBuildersNoSignInRefusalIsTheBuildFailure() throws Exception {
-        String line = "FLX-1023  ERROR  No compiler sign-in found. Run `mvn fluxtion:login` (or set"
+        String line = "FLX-1023  ERROR  No compiler sign-in found. Run `mvn com.telamin.fluxtion:fluxtion-maven-plugin:1.3.4:login` (or set"
                 + " FLUXTION_API_TOKEN for CI).";
         Fluxtion.failWith = new AbstractFluxtionMojoTest.FabricatedDiagnosticException("FLX-1023", line,
                 new AbstractFluxtionMojoTest.FabricatedDiagnosticException("FLX-1023",
-                        "No compiler sign-in found. Run `mvn fluxtion:login` (or set FLUXTION_API_TOKEN for CI).", null));
+                        "No compiler sign-in found. Run `mvn com.telamin.fluxtion:fluxtion-maven-plugin:1.3.4:login` (or set FLUXTION_API_TOKEN for CI).", null));
         try {
             mojo.execute();
             Assert.fail("the refusal fails the build");
