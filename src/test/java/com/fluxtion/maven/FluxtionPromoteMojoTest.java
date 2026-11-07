@@ -522,7 +522,7 @@ public class FluxtionPromoteMojoTest {
     }
 
     @Test
-    public void interruptedMarkerPublicationCannotAuthorizePartialPromotion() throws Exception {
+    public void aFailureBeforeTheCommitPointLeavesSrcWhollyOld() throws Exception {
         org.junit.Assume.assumeTrue(java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
         write(stagingJava, "Custom.java", "first generation");
         mojo.execute();
@@ -537,8 +537,14 @@ public class FluxtionPromoteMojoTest {
             catch (MojoExecutionException expected) { Assert.assertTrue(expected.getMessage().contains("promote failed")); }
         } finally { Files.setPosixFilePermissions(directory, previous); }
         Assert.assertArrayEquals(priorMarker, Files.readAllBytes(marker));
+        // 1.3.4: every file is prepared before any is replaced, so the failure leaves the first generation whole
+        // (1.3.3 had already replaced the source, and the next build refused the half-promoted package)
+        Assert.assertEquals("first generation", read(srcJava.resolve(PKG).resolve("Custom.java")));
+        try (Stream<Path> files = Files.list(srcJava.resolve(PKG))) {
+            Assert.assertEquals("no temporaries left in src/", 1L, files.count());
+        }
+        mojo.execute();
         Assert.assertEquals("second generation", read(srcJava.resolve(PKG).resolve("Custom.java")));
-        assertRefusedNaming(marker);
     }
 
     @Test
@@ -577,5 +583,282 @@ public class FluxtionPromoteMojoTest {
     public void aGeneratedPackageIsRequired() throws Exception {
         mojo.generatedPackage = " ";
         mojo.execute();
+    }
+
+    // ---- 1.3.4: deferral to the tests, stale output, reachability metadata, recovery ----------------------
+
+    private org.apache.maven.execution.MavenSession sessionWithGoals(String... goals) {
+        org.apache.maven.execution.MavenSession session = org.mockito.Mockito.mock(org.apache.maven.execution.MavenSession.class);
+        org.mockito.Mockito.when(session.getGoals()).thenReturn(java.util.Arrays.asList(goals));
+        return session;
+    }
+
+    private void stageGeneration(String source) throws IOException {
+        write(stagingJava, "DemoProcessor.java", source);
+        write(stagingResources, "DemoProcessor.graphml", "graph of " + source);
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp("DemoProcessor"));
+    }
+
+    @Test
+    public void deferToTestsLeavesSrcForTheTestPhaseExecution() throws Exception {
+        commit();
+        stageGeneration("untested source");
+        mojo.deferToTests = true;
+        mojo.session = sessionWithGoals("clean", "package");
+        mojo.execute();
+        Assert.assertEquals("src/ waits for the tests", "committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertEquals("target/classes has the new processor's resources for the tests",
+                "graph of untested source", read(classes.resolve(PKG).resolve("DemoProcessor.graphml")));
+        FluxtionPromoteMojo tested = new FluxtionPromoteMojo();
+        tested.generatedPackage = mojo.generatedPackage;
+        tested.stagingSourceDirectory = mojo.stagingSourceDirectory;
+        tested.stagingResourcesDirectory = mojo.stagingResourcesDirectory;
+        tested.sourceDirectory = mojo.sourceDirectory;
+        tested.resourcesDirectory = mojo.resourcesDirectory;
+        tested.classesDirectory = mojo.classesDirectory;
+        tested.afterTests = true;
+        tested.execute();
+        Assert.assertEquals("untested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertFalse(Files.exists(tmp.getRoot().toPath().resolve("target").resolve(FluxtionPromoteMojo.DEFERRED_MARKER + ".com.acme.demo.generated")));
+        tested.execute(); // nothing held back now: a no-op
+        Assert.assertEquals("untested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+    }
+
+    @Test
+    public void deferToTestsPromotesAtOnceWhenTheBuildStopsBeforeTheTests() throws Exception {
+        commit();
+        stageGeneration("compiled source");
+        mojo.deferToTests = true;
+        for (String goal : new String[]{"compile", "test-compile"}) {
+            mojo.session = sessionWithGoals(goal);
+            Assert.assertFalse(goal, mojo.testsWillRun());
+        }
+        mojo.session = sessionWithGoals("compile");
+        mojo.execute();
+        Assert.assertEquals("compiled source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        mojo.session = sessionWithGoals("verify");
+        Assert.assertTrue(mojo.testsWillRun());
+    }
+
+    @Test
+    public void aRenamedProcessorsStaleOutputLeavesTargetClasses() throws Exception {
+        // OldProcessor is a retired processor: an earlier promotion copied its stamp into target/classes
+        write(classes, "OldProcessor.class", "old");
+        write(classes, "OldProcessor$1.class", "old inner");
+        write(classes, "OldProcessor.graphml", "old graph");
+        write(classes, "OldProcessor.fluxtion-request.json", "old stamp");
+        // copied from src/main/resources by process-resources after a killed promotion, before recovery ran
+        write(classes, PromotionJournal.JOURNAL, "{}");
+        write(classes, ".OldProcessor.graphml.11111111-2222-3333-4444-555555555555.promote", "half");
+        Path oldMetadata = classes.resolve("META-INF/native-image/com.acme.demo.generated.OldProcessor/reachability-metadata.json");
+        Files.createDirectories(oldMetadata.getParent());
+        Files.write(oldMetadata, "{}".getBytes(StandardCharsets.UTF_8));
+        Path liveMetadata = classes.resolve("META-INF/native-image/com.acme.demo.generated.DemoProcessor/reachability-metadata.json");
+        Files.createDirectories(liveMetadata.getParent());
+        Files.write(liveMetadata, "{}".getBytes(StandardCharsets.UTF_8));
+        mojo.compileSourceRoots = java.util.Collections.singletonList(srcJava.toString());
+        stageGeneration("new source");
+        mojo.execute();
+        for (String gone : new String[]{"OldProcessor.class", "OldProcessor$1.class", "OldProcessor.graphml",
+                "OldProcessor.fluxtion-request.json", PromotionJournal.JOURNAL,
+                ".OldProcessor.graphml.11111111-2222-3333-4444-555555555555.promote"}) {
+            Assert.assertFalse(gone, Files.exists(classes.resolve(PKG).resolve(gone)));
+        }
+        Assert.assertFalse(Files.exists(oldMetadata.getParent()));
+        Assert.assertTrue("the live processor's metadata stays", Files.exists(liveMetadata));
+    }
+
+    /**
+     * Review finding 3: user output in the generated package is never stale output. A second top-level class in a user
+     * source (Util.java declaring UtilHelper), a class from another language's source root or a bytecode generator
+     * (no .java anywhere), and a user native-image directory under the package prefix all have no generator record.
+     */
+    @Test
+    public void userClassesInTheGeneratedPackageAreNeverRemoved() throws Exception {
+        write(srcJava, "Util.java", "package com.acme.demo.generated; public class Util {} class UtilHelper {}");
+        for (String user : new String[]{"Util.class", "UtilHelper.class", "Util$1.class", "KotlinThing.class",
+                "Generated$$Proxy.class", "notes.txt"}) {
+            write(classes, user, "user");
+        }
+        Path userMetadata = classes.resolve("META-INF/native-image/com.acme.demo.generated.Custom/native-image.properties");
+        Files.createDirectories(userMetadata.getParent());
+        Files.write(userMetadata, "Args = -H:+User".getBytes(StandardCharsets.UTF_8));
+        mojo.compileSourceRoots = java.util.Arrays.asList(srcJava.toString(), stagingJava.toString());
+        stageGeneration("new source");
+        mojo.execute();
+        for (String user : new String[]{"Util.class", "UtilHelper.class", "Util$1.class", "KotlinThing.class",
+                "Generated$$Proxy.class", "notes.txt"}) {
+            Assert.assertTrue(user, Files.exists(classes.resolve(PKG).resolve(user)));
+        }
+        Assert.assertTrue(Files.exists(userMetadata));
+    }
+
+    /**
+     * The stamped metadata is promoted with the processor, but the ownership marker records exactly what 1.3.3 records
+     * (review finding 2): a 1.3.3 promote after this one recomputes the same map, so it does not refuse.
+     */
+    @Test
+    public void stampedReachabilityMetadataIsPromotedButNotInTheOwnershipMap() throws Exception {
+        String stamp = stamp("DemoProcessor").replace("\"signed\":false", "\"signed\":false,\"reachabilityMetadataDigest\":\""
+                + String.join("", java.util.Collections.nCopies(64, "c")) + "\"");
+        write(srcJava, "DemoProcessor.java", "committed source");
+        write(srcResources, "DemoProcessor.fluxtion-request.json", stamp);
+        write(srcResources, "DemoProcessor" + FluxtionPromoteMojo.REACHABILITY_SUFFIX, "old metadata");
+        write(stagingJava, "DemoProcessor.java", "new source");
+        write(stagingResources, "DemoProcessor.fluxtion-request.json", stamp);
+        write(stagingResources, "DemoProcessor" + FluxtionPromoteMojo.REACHABILITY_SUFFIX, "new metadata");
+        mojo.execute(); // the optional key is accepted as ownership evidence
+        Assert.assertEquals("new metadata", read(srcResources.resolve(PKG).resolve("DemoProcessor" + FluxtionPromoteMojo.REACHABILITY_SUFFIX)));
+        String owned = read(srcResources.resolve(PKG).resolve("DemoProcessor" + FluxtionPromoteMojo.OWNERSHIP_SUFFIX));
+        Assert.assertFalse(owned, owned.contains(FluxtionPromoteMojo.REACHABILITY_SUFFIX));
+        Assert.assertTrue(owned, owned.contains("\"source/DemoProcessor.java\"") && owned.contains("resources/DemoProcessor.fluxtion-request.json"));
+        // the flag turned off: the next generation stages no metadata, so the committed copy goes
+        Files.delete(stagingResources.resolve(PKG).resolve("DemoProcessor" + FluxtionPromoteMojo.REACHABILITY_SUFFIX));
+        write(stagingJava, "DemoProcessor.java", "flag off source");
+        mojo.execute();
+        Assert.assertFalse(Files.exists(srcResources.resolve(PKG).resolve("DemoProcessor" + FluxtionPromoteMojo.REACHABILITY_SUFFIX)));
+    }
+
+    // ---- review finding 4: the test gate ---------------------------------------------------------------
+
+    private FluxtionPromoteMojo afterTestsMojo() {
+        FluxtionPromoteMojo tested = new FluxtionPromoteMojo();
+        tested.generatedPackage = mojo.generatedPackage;
+        tested.stagingSourceDirectory = mojo.stagingSourceDirectory;
+        tested.stagingResourcesDirectory = mojo.stagingResourcesDirectory;
+        tested.sourceDirectory = mojo.sourceDirectory;
+        tested.resourcesDirectory = mojo.resourcesDirectory;
+        tested.classesDirectory = mojo.classesDirectory;
+        tested.afterTests = true;
+        return tested;
+    }
+
+    private void deferOneGeneration(String source) throws Exception {
+        commit();
+        stageGeneration(source);
+        mojo.deferToTests = true;
+        mojo.session = sessionWithGoals("package");
+        mojo.execute();
+        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        // the module has tests
+        Path testClass = tmp.getRoot().toPath().resolve("target/test-classes/t/ATest.class");
+        Files.createDirectories(testClass.getParent());
+        Files.write(testClass, new byte[]{1});
+    }
+
+    private void report(int failures) throws IOException {
+        Path report = tmp.getRoot().toPath().resolve("target/surefire-reports/TEST-t.ATest.xml");
+        Files.createDirectories(report.getParent());
+        Files.write(report, ("<?xml version=\"1.0\"?>\n<testsuite name=\"t.ATest\" tests=\"2\" errors=\"0\" skipped=\"0\" failures=\""
+                + failures + "\"></testsuite>\n").getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void afterTestsRefusesWhenTheTestsHaveNotRunYet() throws Exception {
+        deferOneGeneration("untested source");
+        try {
+            afterTestsMojo().execute();
+            Assert.fail("an afterTests execution ordered before surefire must refuse");
+        } catch (MojoExecutionException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains("declare maven-surefire-plugin before"));
+        }
+        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+    }
+
+    @Test
+    public void afterTestsPromotesWhenThisBuildsReportsPass() throws Exception {
+        deferOneGeneration("tested source");
+        report(0);
+        afterTestsMojo().execute();
+        Assert.assertEquals("tested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+    }
+
+    @Test
+    public void ignoredTestFailuresDoNotPromote() throws Exception {
+        deferOneGeneration("failing source");
+        report(1); // reached only with maven.test.failure.ignore / testFailureIgnore
+        RecordingLog log = new RecordingLog();
+        FluxtionPromoteMojo tested = afterTestsMojo();
+        tested.setLog(log);
+        tested.execute();
+        Assert.assertEquals("committed source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertTrue(log.lines.toString(), log.lines.stream().anyMatch(l -> l.contains("NOT promoted")));
+        Assert.assertEquals(1, TestGate.failures("<testsuite failures=\"1\" errors=\"0\">"));
+        Assert.assertEquals(3, TestGate.failures("<testsuite errors=\"2\"\n failures=\"1\">"));
+    }
+
+    @Test
+    public void skippedTestsPromoteAtCompileWithAWarning() throws Exception {
+        commit();
+        stageGeneration("untested source");
+        mojo.deferToTests = true;
+        mojo.session = sessionWithGoals("package");
+        java.util.Properties user = new java.util.Properties();
+        user.setProperty("skipTests", "true");
+        org.mockito.Mockito.when(mojo.session.getUserProperties()).thenReturn(user);
+        RecordingLog log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.execute();
+        Assert.assertEquals("untested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertTrue(log.lines.toString(), log.lines.stream().anyMatch(l -> l.contains("UNTESTED")));
+    }
+
+    /**
+     * Two promote executions (one per generated package) in one module share target/: each package's held-back
+     * promotion must survive the other execution and be promoted by its own afterTests execution.
+     */
+    @Test
+    public void heldBackPromotionsOfTwoPackagesAreIndependent() throws Exception {
+        deferOneGeneration("tested source");
+        String otherPkg = "com/acme/other/generated";
+        Path otherStaged = stagingJava.resolve(otherPkg).resolve("OtherProcessor.java");
+        Files.createDirectories(otherStaged.getParent());
+        Files.write(otherStaged, "other tested source".getBytes(StandardCharsets.UTF_8));
+        FluxtionPromoteMojo other = afterTestsMojo();
+        other.afterTests = false;
+        other.generatedPackage = "com.acme.other.generated";
+        RecordingLog otherLog = new RecordingLog();
+        other.setLog(otherLog);
+        other.deferToTests = true;
+        other.session = sessionWithGoals("package");
+        other.execute();
+        Assert.assertFalse("the other package's execution must not report this build's held-back promotion as stale: "
+                + otherLog.lines, otherLog.lines.stream().anyMatch(l -> l.contains("never promoted it into src/")));
+        report(0);
+        afterTestsMojo().execute();
+        FluxtionPromoteMojo otherTested = afterTestsMojo();
+        otherTested.generatedPackage = "com.acme.other.generated";
+        otherTested.execute();
+        Assert.assertEquals("tested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertEquals("other tested source", read(srcJava.resolve(otherPkg).resolve("OtherProcessor.java")));
+    }
+
+    @Test
+    public void aDeferredMarkerThatOutlivedItsBuildIsReported() throws Exception {
+        deferOneGeneration("held back source");
+        // the build stopped (failed tests): the next build's compile-phase promote reports it
+        RecordingLog log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.deferToTests = false;
+        stageGeneration("next source");
+        mojo.execute();
+        Assert.assertTrue(log.lines.toString(), log.lines.stream().anyMatch(l -> l.contains("never promoted it into src/")));
+    }
+
+    @Test
+    public void promoteFirstCompletesAnInterruptedPromotion() throws Exception {
+        commit();
+        Path res = srcResources.resolve(PKG);
+        String tx = "11111111-2222-3333-4444-555555555555";
+        Files.write(res.resolve(".DemoProcessor.graphml." + tx + ".promote"), "half promoted graph".getBytes(StandardCharsets.UTF_8));
+        Files.write(res.resolve(PromotionJournal.JOURNAL), ("{\"format\": \"" + PromotionJournal.FORMAT + "\", \"tx\": \""
+                + tx + "\", \"ops\": [{\"path\": \"DemoProcessor.graphml\", \"temp\": \".DemoProcessor.graphml." + tx
+                + ".promote\", \"sha256\": \"" + PromotionJournal.sha256("half promoted graph".getBytes(StandardCharsets.UTF_8))
+                + "\"}]}").getBytes(StandardCharsets.UTF_8));
+        write(stagingJava, "DemoProcessor.java", "committed source");
+        write(stagingResources, "DemoProcessor.fluxtion-reused", "x");
+        mojo.execute();
+        Assert.assertEquals("half promoted graph", read(res.resolve("DemoProcessor.graphml")));
+        Assert.assertFalse(Files.exists(res.resolve(PromotionJournal.JOURNAL)));
     }
 }

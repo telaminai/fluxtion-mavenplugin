@@ -38,8 +38,17 @@ import java.util.stream.Stream;
  *
  * <p>When every staged processor carries the builder's {@code <Processor>.fluxtion-reused} marker the scan reused the
  * committed source, and {@code src/} is not touched at all, so an interrupted reuse build cannot damage it. Otherwise
- * the generator's own files are replaced one by one: each is written to a temporary file and renamed, and a file whose
- * bytes are unchanged is not written.
+ * the generator's own files are replaced as one transaction ({@link PromotionJournal}, 1.3.4): every new file is
+ * prepared beside its destination, a journal is the commit point, and the renames follow with the request stamp and
+ * ownership marker last. A kill before the journal leaves {@code src/} wholly old; a kill after it is completed by the
+ * next build before anything reads {@code src/}. A file whose bytes are unchanged is not written.
+ *
+ * <p>With {@code deferToTests} the {@code src/} half waits for a second execution ({@code afterTests}) at the test
+ * phase, which writes {@code src/} only when this build's surefire reports exist and show no failures ({@link TestGate}:
+ * it refuses when it runs before surefire, and does not promote ignored failures). Every promotion also removes a
+ * RETIRED processor's output (named by the generator's stamps or ownership markers, no longer staged) from the
+ * generated package in {@code target/classes}, so a rename no longer needs {@code clean}; user classes are never
+ * touched.
  *
  * <p><b>Only the generator's files are ever written or deleted.</b> Those are, in the package's own directory and never
  * below it, {@code <Processor>.java} in the sources and {@code <Processor>.java}, {@code .graphml}, {@code .png} and
@@ -65,7 +74,26 @@ public class FluxtionPromoteMojo extends AbstractMojo {
     /** Ownership is independent of reuse: custom templates intentionally have no reusable request stamp. */
     static final String OWNERSHIP_SUFFIX = ".fluxtion-owned.json";
     /** The suffixes of a processor's files in the resources package, as the builder writes them. */
-    private static final List<String> RESOURCE_SUFFIXES = Arrays.asList(".java", ".graphml", ".png", STAMP_SUFFIX);
+    /** The builder's committed copy of a processor's GraalVM reachability metadata (builder 1.0.90+), stamped with it. */
+    static final String REACHABILITY_SUFFIX = ".reachability-metadata.json";
+    /** The suffixes of a processor's files in the resources package, as the builder writes them; the stamp is last. */
+    private static final List<String> RESOURCE_SUFFIXES = Arrays.asList(".java", ".graphml", ".png", REACHABILITY_SUFFIX,
+            STAMP_SUFFIX);
+    /**
+     * The suffixes recorded in the ownership marker: exactly 1.3.3's, so a 1.3.3 promote after a 1.3.4 one reads an
+     * ownership map it can reproduce. The reachability metadata copy is the generator's by its name and is vouched
+     * for by the builder's stamp ({@code reachabilityMetadataDigest}), not by the ownership marker.
+     */
+    private static final List<String> OWNED_SUFFIXES = Arrays.asList(".java", ".graphml", ".png", STAMP_SUFFIX);
+    /**
+     * Marks a compile-phase promotion whose src/ half waits for the tests ({@code deferToTests}); the file is this
+     * prefix, a dot and the generated package.
+     */
+    static final String DEFERRED_MARKER = ".fluxtion-promote-deferred";
+    /** The default lifecycle from {@code test} on: requesting any of these runs the tests (or their skip). */
+    private static final Set<String> RUNS_TEST_PHASE = new TreeSet<>(Arrays.asList("test", "prepare-package",
+            "package", "pre-integration-test", "integration-test", "post-integration-test", "verify", "install",
+            "deploy"));
     private static final Pattern PACKAGE = Pattern.compile(
             "\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*(\\.\\p{javaJavaIdentifierStart}\\p{javaJavaIdentifierPart}*)*");
 
@@ -92,6 +120,35 @@ public class FluxtionPromoteMojo extends AbstractMojo {
     @Parameter(property = "fluxtion.promote.skip", defaultValue = "false")
     protected boolean skip;
 
+    /**
+     * Holds back the {@code src/} half of a generated promotion until the tests have passed. When this build will
+     * reach the {@code test} phase (and the tests are not skipped), this execution fills {@code target/classes} (so the
+     * tests run the new processor) and leaves {@code src/} to a second execution of this goal with {@code afterTests},
+     * bound to {@code test} and declared after surefire. That execution checks this build's surefire reports before it
+     * writes; see {@link TestGate}. A build that does not reach {@code test} ({@code compile}, {@code test-compile}),
+     * or skips the tests (WARN: promoted untested), promotes here.
+     */
+    @Parameter(property = "fluxtion.promote.deferToTests", defaultValue = "false")
+    protected boolean deferToTests;
+
+    /** Set on the second, {@code test}-phase execution: promotes what a {@code deferToTests} execution held back. */
+    @Parameter(defaultValue = "false")
+    protected boolean afterTests;
+
+    /** Every compile source root: a class in the generated package with a source in none of them is stale. */
+    @Parameter(defaultValue = "${project.compileSourceRoots}", readonly = true)
+    protected List<String> compileSourceRoots;
+
+    @Parameter(defaultValue = "${session}", readonly = true)
+    protected org.apache.maven.execution.MavenSession session;
+
+    @Parameter(defaultValue = "${project}", readonly = true)
+    protected org.apache.maven.project.MavenProject project;
+
+    /** Holds the deferral marker and the promotion lock; outlives the staging clear at {@code initialize}. */
+    @Parameter(defaultValue = "${project.build.directory}", readonly = true)
+    protected String buildDirectory;
+
     @Override
     public void execute() throws MojoExecutionException {
         if (skip || System.getProperty("skipFluxtion") != null) {
@@ -104,11 +161,50 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                     + " into (e.g. com.example.myapp.generated); got '" + generatedPackage + "'");
         }
         String packagePath = pkg.replace('.', '/');
+        Path target = targetDirectory();
+        // one per generated package: a module with a promote execution per package holds each back on its own
+        Path deferredMarker = target.resolve(DEFERRED_MARKER + "." + pkg);
+        Path lock = target.resolve(PromotionJournal.LOCK);
+        TestGate gate = new TestGate(project, session, target, getLog());
+        if (afterTests) {
+            if (!Files.isRegularFile(deferredMarker)) {
+                getLog().info("Fluxtion promote: nothing held back for the tests; src/ was promoted at compile or"
+                        + " needed no change.");
+                return;
+            }
+            try {
+                if (!gate.testsPassed()) {
+                    Files.deleteIfExists(deferredMarker);
+                    return;
+                }
+            } catch (IOException e) {
+                throw new MojoExecutionException("Fluxtion promote: cannot read the test reports: " + e.getMessage(), e);
+            }
+            getLog().info("Fluxtion promote: the tests passed; promoting the held-back processor into src/.");
+        } else {
+            if (Files.isRegularFile(deferredMarker)) {
+                getLog().warn("Fluxtion promote: an earlier build held its regenerated processor back for the tests and"
+                        + " never promoted it into src/ (its tests failed, it stopped before the test phase, or there is"
+                        + " no promote execution with <afterTests>true</afterTests>). src/ was not updated by it.");
+                try {
+                    Files.delete(deferredMarker);
+                } catch (IOException e) {
+                    throw new MojoExecutionException("Fluxtion promote: cannot remove " + deferredMarker, e);
+                }
+            }
+            if (deferToTests && project != null && !TestGate.hasAfterTestsExecution(project)) {
+                getLog().warn("Fluxtion promote: deferToTests is set but no promote execution has"
+                        + " <afterTests>true</afterTests>; a build that runs the tests will never update src/. Add the"
+                        + " promote-tested execution (see the plugin README).");
+            }
+        }
         Path stagedResources = Paths.get(stagingResourcesDirectory);
         Path stagedJavaPackage = Paths.get(stagingSourceDirectory).resolve(packagePath);
         Path stagedResourcePackage = stagedResources.resolve(packagePath);
         Path srcJavaPackage = Paths.get(sourceDirectory).resolve(packagePath);
         Path srcResourcePackage = Paths.get(resourcesDirectory).resolve(packagePath);
+        // an earlier build stopped inside a promotion: finish it before reading src/
+        PromotionJournal.recover(srcResourcePackage, Arrays.asList(srcJavaPackage, srcResourcePackage), lock, getLog());
         try {
             Set<String> staged = new TreeSet<>(namesEndingWith(stagedJavaPackage, ".java"));
             Set<String> reused = namesEndingWith(stagedResourcePackage, REUSED_MARKER_SUFFIX);
@@ -154,21 +250,54 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                 }
             }
             if (reuse) {
+                int stale = removeStaleOutput(packagePath, staged, known, srcResourcePackage);
                 getLog().info("Fluxtion promote: " + pkg + " reused (" + String.join(", ", reused)
-                        + "), src/ unchanged; " + classes + " in " + classesDirectory);
+                        + "), src/ unchanged; " + classes + " in " + classesDirectory
+                        + (stale > 0 ? "; " + stale + " stale file(s) removed from it" : ""));
+                Files.deleteIfExists(deferredMarker);
+                return;
+            }
+            boolean deferring = !afterTests && deferToTests && testsWillRun();
+            if (deferring && gate.testsSkipped()) {
+                getLog().warn("Fluxtion promote: tests are skipped (-DskipTests / -Dmaven.test.skip), so the regenerated"
+                        + " processor is promoted into src/ UNTESTED.");
+                deferring = false;
+            }
+            if (deferring) {
+                if (gate.failureIgnored()) {
+                    getLog().warn("Fluxtion promote: test failures are ignored (maven.test.failure.ignore /"
+                            + " testFailureIgnore); src/ is promoted after the tests only if their reports show no"
+                            + " failures or errors.");
+                }
+                int stale = removeStaleOutput(packagePath, staged, known, srcResourcePackage);
+                Files.createDirectories(deferredMarker.getParent());
+                Files.write(deferredMarker, (pkg + "\n").getBytes(StandardCharsets.UTF_8));
+                getLog().info("Fluxtion promote: " + pkg + " generated (" + String.join(", ", staged) + "); "
+                        + classes + " in " + classesDirectory + (stale > 0 ? ", " + stale + " stale file(s) removed" : "")
+                        + "; src/ is promoted after the tests pass (promote with afterTests at the test phase).");
                 return;
             }
             Counts src = new Counts();
+            List<PromotionJournal.Op> ops = new ArrayList<>();
             for (String processor : known) {
-                replace(stagedJavaPackage, srcJavaPackage, processor + ".java", src);
+                plan(stagedJavaPackage, srcJavaPackage, processor + ".java", ops);
                 for (String suffix : RESOURCE_SUFFIXES) {
-                    replace(stagedResourcePackage, srcResourcePackage, processor + suffix, src);
+                    plan(stagedResourcePackage, srcResourcePackage, processor + suffix, ops);
                 }
-                // Last for this processor: an interrupted promotion cannot bless a partially written result.
-                publishOwnership(srcJavaPackage, srcResourcePackage, pkg, processor, src);
             }
+            // Last: an interrupted promotion cannot bless a partially written result (and the journal rolls it forward).
+            for (String processor : known) {
+                planOwnership(srcJavaPackage, srcResourcePackage, pkg, processor, ops);
+            }
+            int[] applied = PromotionJournal.commit(srcResourcePackage, ops, lock, getLog());
+            src.written = applied[0];
+            src.deleted = applied[1];
+            src.unchanged = ops.size() - applied[0] - applied[1];
+            Files.deleteIfExists(deferredMarker);
+            int stale = removeStaleOutput(packagePath, staged, known, srcResourcePackage);
             getLog().info("Fluxtion promote: " + pkg + " generated (" + String.join(", ", staged) + "); src/ " + src
-                    + ", " + src.deleted + " deleted; " + classes + " in " + classesDirectory);
+                    + ", " + src.deleted + " deleted; " + classes + " in " + classesDirectory
+                    + (stale > 0 ? "; " + stale + " stale file(s) removed from it" : ""));
         } catch (IOException e) {
             throw new MojoExecutionException("Fluxtion promote failed: " + e.getMessage(), e);
         }
@@ -204,8 +333,12 @@ public class FluxtionPromoteMojo extends AbstractMojo {
                 Map<String, Object> fields = Json.objectStrict(new String(Files.readAllBytes(stamp), StandardCharsets.UTF_8));
                 Object format = fields.get("format"), base = fields.get("relocatableBase");
                 // V1 can prove prior ownership during upgrade; only the builder decides whether it can be reused.
-                if (fields.keySet().equals(new TreeSet<>(Arrays.asList("format", "processor", "requestDigest",
+                Set<String> keys = new TreeSet<>(fields.keySet());
+                // optional since builder 1.0.90: the stamped reachability metadata
+                Object reachability = keys.remove("reachabilityMetadataDigest") ? fields.get("reachabilityMetadataDigest") : null;
+                if (keys.equals(new TreeSet<>(Arrays.asList("format", "processor", "requestDigest",
                         "sourceDigest", "signed", "relocatableBase")))
+                        && (reachability == null || digest(reachability))
                         && ("fluxtion-request-digest/1".equals(format) || "fluxtion-request-digest/2".equals(format))
                         && (pkg + "." + name).equals(fields.get("processor"))
                         && digest(fields.get("requestDigest")) && digest(fields.get("sourceDigest"))
@@ -264,7 +397,7 @@ public class FluxtionPromoteMojo extends AbstractMojo {
         Map<String, String> files = new TreeMap<>();
         Path source = javaDir.resolve(name + ".java");
         if (Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS)) files.put("source/" + source.getFileName(), contentHash(source));
-        for (String suffix : RESOURCE_SUFFIXES) {
+        for (String suffix : OWNED_SUFFIXES) {
             Path file = resourceDir.resolve(name + suffix);
             if (Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) files.put("resources/" + file.getFileName(), contentHash(file));
         }
@@ -272,7 +405,10 @@ public class FluxtionPromoteMojo extends AbstractMojo {
     }
 
     private static String contentHash(Path file) throws IOException {
-        byte[] bytes = Files.readAllBytes(file);
+        return contentHash(Files.readAllBytes(file));
+    }
+
+    private static String contentHash(byte[] bytes) {
         // All promoted files are text (PNGs are removed); Git's CRLF conversion is not a user edit.
         try {
             String text = StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString();
@@ -288,13 +424,39 @@ public class FluxtionPromoteMojo extends AbstractMojo {
         } catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 
-    private static void publishOwnership(Path javaDir, Path resourceDir, String pkg, String name, Counts counts) throws IOException {
-        Map<String, String> files = ownedFiles(javaDir, resourceDir, name);
+    /**
+     * Plans the ownership marker for the files as they will be once {@code ops} are applied, so the marker is written
+     * in the same transaction as the files it describes.
+     */
+    private static void planOwnership(Path javaDir, Path resourceDir, String pkg, String name,
+                                      List<PromotionJournal.Op> ops) throws IOException {
+        Map<Path, byte[]> pending = new java.util.HashMap<>();
+        Set<Path> deleted = new java.util.HashSet<>();
+        for (PromotionJournal.Op op : ops) {
+            if (op.bytes == null) deleted.add(op.path); else pending.put(op.path, op.bytes);
+        }
+        Map<String, String> files = new TreeMap<>();
+        List<Path> candidates = new ArrayList<>();
+        candidates.add(javaDir.resolve(name + ".java"));
+        for (String suffix : OWNED_SUFFIXES) candidates.add(resourceDir.resolve(name + suffix));
+        for (int i = 0; i < candidates.size(); i++) {
+            Path file = candidates.get(i);
+            String key = (i == 0 ? "source/" : "resources/") + file.getFileName();
+            if (pending.containsKey(file)) {
+                files.put(key, contentHash(pending.get(file)));
+            } else if (!deleted.contains(file) && Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+                files.put(key, contentHash(file));
+            }
+        }
         Path destination = resourceDir.resolve(name + OWNERSHIP_SUFFIX);
         if (files.isEmpty()) {
-            Files.deleteIfExists(destination);
+            ops.add(new PromotionJournal.Op(destination, null));
             return;
         }
+        ops.add(new PromotionJournal.Op(destination, ownershipJson(pkg, name, files)));
+    }
+
+    private static byte[] ownershipJson(String pkg, String name, Map<String, String> files) {
         StringBuilder json = new StringBuilder("{\n  \"format\": \"fluxtion-promotion/1\",\n  \"processor\": ")
                 .append(Json.quote(pkg + "." + name)).append(",\n  \"files\": {");
         int at = 0;
@@ -302,7 +464,7 @@ public class FluxtionPromoteMojo extends AbstractMojo {
             json.append(at++ == 0 ? "\n" : ",\n").append("    ").append(Json.quote(entry.getKey())).append(": ").append(Json.quote(entry.getValue()));
         }
         json.append("\n  }\n}\n");
-        promoteBytes(json.toString().getBytes(StandardCharsets.UTF_8), destination, counts);
+        return json.toString().getBytes(StandardCharsets.UTF_8);
     }
 
     private static boolean digest(Object value) {
@@ -340,18 +502,113 @@ public class FluxtionPromoteMojo extends AbstractMojo {
         }
     }
 
-    /** One generator file: promoted when staged (PNG never), deleted when not staged. Checked to be a file first. */
-    private static void replace(Path stagedDir, Path srcDir, String name, Counts counts) throws IOException {
+    /** One generator file, planned: written when staged (PNG never), deleted when not staged. */
+    private static void plan(Path stagedDir, Path srcDir, String name, List<PromotionJournal.Op> ops) throws IOException {
         Path from = stagedDir.resolve(name);
         Path to = srcDir.resolve(name);
         boolean png = name.toLowerCase(Locale.ROOT).endsWith(".png");
         if (!png && Files.isRegularFile(from, LinkOption.NOFOLLOW_LINKS)) {
-            promote(from, to, counts);
+            ops.add(new PromotionJournal.Op(to, Files.readAllBytes(from)));
         } else if (Files.isRegularFile(to, LinkOption.NOFOLLOW_LINKS)
                 && (png || !Files.exists(from, LinkOption.NOFOLLOW_LINKS))) {
-            Files.delete(to);
-            counts.deleted++;
+            ops.add(new PromotionJournal.Op(to, null));
         }
+    }
+
+    /**
+     * Whether this build reaches the {@code test} phase: a requested lifecycle phase at or after it. Unknown (no
+     * session) counts as no, so promotion then happens at once, as before.
+     */
+    boolean testsWillRun() {
+        if (session == null || session.getGoals() == null) return false;
+        for (String goal : session.getGoals()) {
+            if (RUNS_TEST_PHASE.contains(goal)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Removes the output of processors this promotion retired (renamed or removed) from the generated package in
+     * {@code target/classes}, so the jar does not carry them without a {@code clean}. Only GENERATOR files are ever
+     * removed: a processor counts as retired only when it is named by the generator's own records — a request stamp or
+     * ownership marker committed in {@code src/} ({@code known}) or copied into {@code target/classes} by an earlier
+     * promotion — and is not staged now and has no source in a compile source root. For such a processor its classes
+     * ({@code X.class}, {@code X$*.class}), its generator resources and {@code META-INF/native-image/<pkg>.X/} go.
+     * Nothing else is touched: a user class in the package (a second top-level class, a Kotlin or Groovy class, a
+     * bytecode generator's output) has no generator record. Promotion debris copied in by an interrupted build goes too.
+     */
+    int removeStaleOutput(String packagePath, Set<String> staged, Set<String> known, Path resourcePackage)
+            throws IOException {
+        Path classesPkg = Paths.get(classesDirectory).resolve(packagePath);
+        if (!Files.isDirectory(classesPkg, LinkOption.NOFOLLOW_LINKS)) return 0;
+        Set<String> retired = new TreeSet<>(known);
+        retired.addAll(namesEndingWith(resourcePackage, STAMP_SUFFIX));
+        retired.addAll(namesEndingWith(resourcePackage, OWNERSHIP_SUFFIX));
+        retired.addAll(namesEndingWith(classesPkg, STAMP_SUFFIX));
+        retired.addAll(namesEndingWith(classesPkg, OWNERSHIP_SUFFIX));
+        retired.removeAll(staged);
+        List<String> roots = compileSourceRoots == null ? new ArrayList<>() : compileSourceRoots;
+        retired.removeIf(name -> hasSource(roots, packagePath, name));
+        int removed = 0;
+        List<Path> entries;
+        try (Stream<Path> list = Files.list(classesPkg)) {
+            entries = list.filter(p -> Files.isRegularFile(p, LinkOption.NOFOLLOW_LINKS)).collect(Collectors.toList());
+        }
+        for (Path file : entries) {
+            String name = file.getFileName().toString();
+            boolean generatorFile = PromotionJournal.isDebris(name);
+            if (!generatorFile && name.endsWith(".class")) {
+                String top = name.substring(0, name.length() - 6);
+                int dollar = top.indexOf('$');
+                generatorFile = retired.contains(dollar > 0 ? top.substring(0, dollar) : top);
+            } else if (!generatorFile) {
+                for (String suffix : generatorResourceSuffixes()) {
+                    if (name.endsWith(suffix) && name.length() > suffix.length()) {
+                        generatorFile = retired.contains(name.substring(0, name.length() - suffix.length()));
+                        break;
+                    }
+                }
+            }
+            if (generatorFile) {
+                Files.delete(file);
+                removed++;
+            }
+        }
+        String prefix = packagePath.replace('/', '.') + ".";
+        for (String processor : retired) {
+            Path dir = Paths.get(classesDirectory).resolve("META-INF/native-image").resolve(prefix + processor);
+            if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) continue;
+            try (Stream<Path> walk = Files.walk(dir)) {
+                for (Path p : walk.sorted(java.util.Comparator.reverseOrder()).collect(Collectors.toList())) {
+                    Files.delete(p);
+                }
+            }
+            removed++;
+        }
+        return removed;
+    }
+
+    private Path targetDirectory() {
+        if (buildDirectory != null && !buildDirectory.trim().isEmpty()) return Paths.get(buildDirectory);
+        Path staging = Paths.get(stagingResourcesDirectory).toAbsolutePath();
+        return staging.getParent() != null && staging.getParent().getParent() != null
+                ? staging.getParent().getParent() : staging.getParent();
+    }
+
+    private static List<String> generatorResourceSuffixes() {
+        List<String> suffixes = new ArrayList<>(RESOURCE_SUFFIXES);
+        suffixes.add(OWNERSHIP_SUFFIX);
+        suffixes.add(REUSED_MARKER_SUFFIX);
+        // longest first, so ".fluxtion-request.json" is matched before a shorter suffix could be
+        suffixes.sort((a, b) -> b.length() - a.length());
+        return suffixes;
+    }
+
+    private static boolean hasSource(List<String> roots, String packagePath, String top) {
+        for (String root : roots) {
+            if (Files.isRegularFile(Paths.get(root).resolve(packagePath).resolve(top + ".java"))) return true;
+        }
+        return false;
     }
 
     /** Processor names from the regular files directly in {@code dir} (never below it) ending with {@code suffix}. */

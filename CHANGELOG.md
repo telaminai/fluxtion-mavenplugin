@@ -14,6 +14,22 @@
 - Use with `com.telamin.fluxtion:fluxtion-builder` 1.0.90 or later; every generation goal warns, once per build, when
   the project's builder is older (and refuses one older than 1.0.82).
 
+### Added
+- `promote` is one transaction: prepared files, a journal (`.fluxtion-promote.json`) as the commit point, then
+  renames, stamp and ownership marker last. A killed build is completed by the next one (`prepare`, `scan` or
+  `promote`, whichever runs first): with `prepare` bound, before anything reads `src/`; without it, before the scan
+  reads the committed processor. Promotions of one project are serialised by
+  `target/fluxtion-promote.lock`.
+- `deferToTests` / `afterTests`: hold `src/` back until this build's surefire reports show no failures or errors.
+- `prepare` goal (`generate-sources`): completes an interrupted promotion and checks that the committed processor
+  still compiles; when it does not, `fluxtion.generated.exclude` lets `default-compile` leave it out so the build
+  regenerates it.
+- `promote` commits `<Processor>.reachability-metadata.json` with the processor, and `scan` tells the builder it does
+  (`FLUXTION.ENSURE.PROMOTES.REACHABILITY`). With fluxtion-builder 1.0.90 or later an unchanged build with
+  `setGenerateReachabilityMetadata(true)` then reuses the committed processor and restores the metadata instead of
+  regenerating. The file is not recorded in `<Processor>.fluxtion-owned.json`, so 1.3.3 and this version can
+  alternate on one checkout.
+
 ### Changed
 - `fluxtion:login` with no compiler URL signs in to the managed compiler, `https://compiler.fluxtion-playground.dev`.
 - `FLUXTION_API_TOKEN` with no compiler URL goes to the managed compiler instead of failing the build.
@@ -21,6 +37,8 @@
 - An explicit `-Dfluxtion.remote.auth=session` is no longer overwritten.
 - The credential `fluxtion:login` stores is now also read by fluxtion-builder 1.0.90 itself, so Gradle, JBang and a
   plain `main` find it; its `token` and `url` keys are a contract, pinned by a test.
+- Every promotion removes the `target/classes` output of retired processors (classes, generator resources and
+  `META-INF/native-image/<package>.X/`) named by the generator's own records; a rename no longer needs `clean`.
 
 ## [1.3.3] - 2026-11-06
 
