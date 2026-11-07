@@ -65,6 +65,8 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
     public static final String ENSURE_RESOURCES_DIRECTORY = "FLUXTION.ENSURE.RESOURCES.DIRECTORY";
     public static final String ENSURE_RELOCATABLE_BASE = "FLUXTION.ENSURE.RELOCATABLE.BASE";
     public static final String REGENERATE = "fluxtion.regenerate";
+    /** Tells the builder that promote commits the reachability metadata copy, so a missing one is not blamed on it. */
+    public static final String PROMOTES_REACHABILITY = "FLUXTION.ENSURE.PROMOTES.REACHABILITY";
     /** A class only a builder with ensure support (fluxtion-builder 1.0.87 or later) has; probed, never initialised. */
     public static final String ENSURE_SUPPORT_CLASS = "com.telamin.fluxtion.builder.compile.generation.EnsureProcessor";
 
@@ -104,6 +106,11 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             setProperty(previousProperties, RESOURCES_DIRECTORY, resourcesDirectory);
             if (ensureProcessor) {
                 applyEnsureProperties(previousProperties);
+                // the builder reads the committed processor: finish any promotion an earlier build was killed in
+                PromotionJournal.recoverAll(java.nio.file.Paths.get(System.getProperty(ENSURE_RESOURCES_DIRECTORY)),
+                        lockFile(), getLog());
+                // this plugin's promote commits <Processor>.reachability-metadata.json (builder 1.0.90+ reuses it)
+                setProperty(previousProperties, PROMOTES_REACHABILITY, "true");
             }
             URLClassLoader classLoader = buildFluxtionClassLoader();
             if (ensureProcessor) {
@@ -127,6 +134,12 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             restoreProperties(previousProperties);
             CompilerCredentials.restore(previousAuth);
         }
+    }
+
+    private java.nio.file.Path lockFile() throws java.io.IOException {
+        String dir = project.getBuild() == null ? null : project.getBuild().getDirectory();
+        return (dir != null ? java.nio.file.Paths.get(dir)
+                : project.getBasedir().getCanonicalFile().toPath().resolve("target")).resolve(PromotionJournal.LOCK);
     }
 
     /** Sets the builder's ensure-mode properties; the ensure source directory being set is what enables it. */
