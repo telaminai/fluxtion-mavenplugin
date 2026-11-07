@@ -12,6 +12,7 @@ public class Fluxtion {
     public static String seenToken;
     public static String seenHost;
     public static String seenPort;
+    public static String seenIssuer;
     /** The builder's directory and ensure-mode system properties as they were while the builder ran. */
     public static final java.util.Map<String, String> seenProperties = new java.util.HashMap<>();
     /** Thrown from the scan when set, as the builder would throw a refusal. */
@@ -44,6 +45,7 @@ public class Fluxtion {
         seenToken = System.getProperty("fluxtion.remote.token");
         seenHost = System.getProperty("fluxtion.remote.host");
         seenPort = System.getProperty("fluxtion.remote.port");
+        seenIssuer = System.getProperty("fluxtion.remote.tokenIssuer");
     }
 
     public static void reset() {
@@ -55,6 +57,7 @@ public class Fluxtion {
         seenToken = null;
         seenHost = null;
         seenPort = null;
+        seenIssuer = null;
         seenProperties.clear();
         failWith = null;
     }

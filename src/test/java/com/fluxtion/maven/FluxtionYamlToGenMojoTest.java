@@ -48,4 +48,31 @@ public class FluxtionYamlToGenMojoTest {
         Assert.assertTrue("Fluxtion.compileFromReader should have been called", Fluxtion.called);
         Assert.assertNotNull(Fluxtion.passedReader);
     }
+
+    /** Review M3: a builder without token mode (older than 1.0.82) would use the retired key route: refused. */
+    @Test
+    public void aBuilderWithoutTokenModeIsRefusedBeforeGeneration() {
+        mojo.tokenModeSupportClass = "com.telamin.fluxtion.builder.NotInThisBuilder";
+        try {
+            mojo.execute();
+            Assert.fail("refused");
+        } catch (MojoExecutionException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("older than 1.0.82"));
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("retired RapidAPI key route"));
+        }
+        Assert.assertFalse("the builder must not run", Fluxtion.called);
+    }
+
+    /** Review L9: the 1.0.90 upgrade warning is said once per build, by this goal too. */
+    @Test
+    public void theUpgradeWarningIsSaidOncePerBuild() throws MojoExecutionException {
+        AbstractFluxtionMojo.resetUpgradeWarningForTest();
+        RecordingLog log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.execute();
+        mojo.execute();
+        String all = log.all();
+        Assert.assertEquals(all, all.indexOf("older than 1.0.90"), all.lastIndexOf("older than 1.0.90"));
+        Assert.assertTrue(all, all.contains("older than 1.0.90"));
+    }
 }

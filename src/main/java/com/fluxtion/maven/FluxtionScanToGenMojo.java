@@ -116,6 +116,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             if (ensureProcessor) {
                 requireEnsureSupport(classLoader);
             }
+            checkBuilder(classLoader);
             ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
             try {
                 Thread.currentThread().setContextClassLoader(classLoader);
