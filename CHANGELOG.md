@@ -5,7 +5,8 @@
 ### Added
 - `promote` is one transaction: prepared files, a journal (`.fluxtion-promote.json`) as the commit point, then
   renames, stamp and ownership marker last. A killed build is completed by the next one (`prepare`, `scan` or
-  `promote`, whichever runs first) before anything reads `src/`. Promotions of one project are serialised by
+  `promote`, whichever runs first): with `prepare` bound, before anything reads `src/`; without it, before the scan
+  reads the committed processor. Promotions of one project are serialised by
   `target/fluxtion-promote.lock`.
 - `deferToTests` / `afterTests`: hold `src/` back until this build's surefire reports show no failures or errors.
 - `prepare` goal (`generate-sources`): completes an interrupted promotion and checks that the committed processor

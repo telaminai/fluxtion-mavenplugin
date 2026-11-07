@@ -235,7 +235,9 @@ Since 1.3.4:
     (`.fluxtion-promote.json` in the resources package) is the commit point, then the files are renamed into place,
     the request stamp and ownership marker last. A kill before the journal leaves `src/` wholly old; a kill after it
     leaves the journal, and the next build completes the promotion (in `prepare`, the scan or `promote`, whichever runs
-    first) before anything reads `src/`.
+    first). With the `prepare` goal bound (it runs at `generate-sources`) that is before anything reads `src/`; without
+    it, a compile bound before the scan may first see the interrupted package (every file whole, old or new), and the
+    scan completes the promotion before it reads the committed processor.
 *   **After the tests.** With `deferToTests` on the compile-phase execution and a second execution
     (`<afterTests>true</afterTests>`) bound to `test`, the compile-phase execution fills `target/classes` and holds
     `src/` back; the `afterTests` execution writes `src/` only when this build's surefire reports exist and show no
