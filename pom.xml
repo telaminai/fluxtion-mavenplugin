@@ -342,6 +342,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses />.
             <version>4.11.0</version>
             <scope>test</scope>
         </dependency>
+        <!-- FluxtionPrepareMojoTest: a classpath annotation processor (review finding 5) -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.42</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <distributionManagement>
