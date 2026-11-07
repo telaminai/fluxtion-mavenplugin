@@ -85,7 +85,10 @@ public class FluxtionPromoteMojo extends AbstractMojo {
      * for by the builder's stamp ({@code reachabilityMetadataDigest}), not by the ownership marker.
      */
     private static final List<String> OWNED_SUFFIXES = Arrays.asList(".java", ".graphml", ".png", STAMP_SUFFIX);
-    /** Marks a compile-phase promotion whose src/ half waits for the tests ({@code deferToTests}). */
+    /**
+     * Marks a compile-phase promotion whose src/ half waits for the tests ({@code deferToTests}); the file is this
+     * prefix, a dot and the generated package.
+     */
     static final String DEFERRED_MARKER = ".fluxtion-promote-deferred";
     /** The default lifecycle from {@code test} on: requesting any of these runs the tests (or their skip). */
     private static final Set<String> RUNS_TEST_PHASE = new TreeSet<>(Arrays.asList("test", "prepare-package",
@@ -159,7 +162,8 @@ public class FluxtionPromoteMojo extends AbstractMojo {
         }
         String packagePath = pkg.replace('.', '/');
         Path target = targetDirectory();
-        Path deferredMarker = target.resolve(DEFERRED_MARKER);
+        // one per generated package: a module with a promote execution per package holds each back on its own
+        Path deferredMarker = target.resolve(DEFERRED_MARKER + "." + pkg);
         Path lock = target.resolve(PromotionJournal.LOCK);
         TestGate gate = new TestGate(project, session, target, getLog());
         if (afterTests) {

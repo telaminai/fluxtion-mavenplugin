@@ -619,7 +619,7 @@ public class FluxtionPromoteMojoTest {
         tested.afterTests = true;
         tested.execute();
         Assert.assertEquals("untested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
-        Assert.assertFalse(Files.exists(tmp.getRoot().toPath().resolve("target").resolve(FluxtionPromoteMojo.DEFERRED_MARKER)));
+        Assert.assertFalse(Files.exists(tmp.getRoot().toPath().resolve("target").resolve(FluxtionPromoteMojo.DEFERRED_MARKER + ".com.acme.demo.generated")));
         tested.execute(); // nothing held back now: a no-op
         Assert.assertEquals("untested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
     }
@@ -801,6 +801,36 @@ public class FluxtionPromoteMojoTest {
         mojo.execute();
         Assert.assertEquals("untested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
         Assert.assertTrue(log.lines.toString(), log.lines.stream().anyMatch(l -> l.contains("UNTESTED")));
+    }
+
+    /**
+     * Two promote executions (one per generated package) in one module share target/: each package's held-back
+     * promotion must survive the other execution and be promoted by its own afterTests execution.
+     */
+    @Test
+    public void heldBackPromotionsOfTwoPackagesAreIndependent() throws Exception {
+        deferOneGeneration("tested source");
+        String otherPkg = "com/acme/other/generated";
+        Path otherStaged = stagingJava.resolve(otherPkg).resolve("OtherProcessor.java");
+        Files.createDirectories(otherStaged.getParent());
+        Files.write(otherStaged, "other tested source".getBytes(StandardCharsets.UTF_8));
+        FluxtionPromoteMojo other = afterTestsMojo();
+        other.afterTests = false;
+        other.generatedPackage = "com.acme.other.generated";
+        RecordingLog otherLog = new RecordingLog();
+        other.setLog(otherLog);
+        other.deferToTests = true;
+        other.session = sessionWithGoals("package");
+        other.execute();
+        Assert.assertFalse("the other package's execution must not report this build's held-back promotion as stale: "
+                + otherLog.lines, otherLog.lines.stream().anyMatch(l -> l.contains("never promoted it into src/")));
+        report(0);
+        afterTestsMojo().execute();
+        FluxtionPromoteMojo otherTested = afterTestsMojo();
+        otherTested.generatedPackage = "com.acme.other.generated";
+        otherTested.execute();
+        Assert.assertEquals("tested source", read(srcJava.resolve(PKG).resolve("DemoProcessor.java")));
+        Assert.assertEquals("other tested source", read(srcJava.resolve(otherPkg).resolve("OtherProcessor.java")));
     }
 
     @Test
