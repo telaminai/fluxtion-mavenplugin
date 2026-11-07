@@ -88,6 +88,7 @@ public class CompilerCredentialsTest {
 
     @Test
     public void aBuilderBefore1090IsToldToUpgrade_andA1090BuilderIsNot() throws Exception {
+        AbstractFluxtionMojo.resetUpgradeWarningForTest();
         mojo.execute();
         Assert.assertTrue(log.all(), log.all().contains("older than 1.0.90"));
         RecordingLog quiet = new RecordingLog();
@@ -319,5 +320,46 @@ public class CompilerCredentialsTest {
         Assert.assertNull(System.getProperty("fluxtion.remote.token"));
         Assert.assertNull(System.getProperty("fluxtion.remote.host"));
         Assert.assertNull(System.getProperty("fluxtion.remote.port"));
+        Assert.assertNull(System.getProperty("fluxtion.remote.tokenIssuer"));
+    }
+
+    /** Review L2: the issuer goes with a handed-over credential, so builder 1.0.90 checks every call against it. */
+    @Test
+    public void aHandedOverCredentialCarriesItsIssuer() throws Exception {
+        storeCredential("https://stored.example.com");
+        mojo.execute();
+        Assert.assertEquals("https://stored.example.com", Fluxtion.seenIssuer);
+        assertNoCredentialLeft();
+    }
+
+    /** Review L10: an explicit fluxtion.remote.auth=session is kept, and no credential is passed. */
+    @Test
+    public void anExplicitSessionModeIsKept() throws Exception {
+        storeCredential("https://stored.example.com");
+        System.setProperty("fluxtion.remote.auth", "session");
+        try {
+            mojo.execute();
+            Assert.assertEquals("session", Fluxtion.seenAuth);
+            Assert.assertNull("no credential passed", Fluxtion.seenToken);
+            Assert.assertEquals("session", System.getProperty("fluxtion.remote.auth"));
+        } finally {
+            System.clearProperty("fluxtion.remote.auth");
+        }
+    }
+
+    /** Review M3: a builder without token mode is refused before generation, signed in or not. */
+    @Test
+    public void aBuilderWithoutTokenModeIsRefusedBeforeGeneration() throws Exception {
+        storeCredential("https://stored.example.com");
+        mojo.tokenModeSupportClass = "com.telamin.fluxtion.builder.NotInThisBuilder";
+        try {
+            mojo.execute();
+            Assert.fail("refused");
+        } catch (MojoExecutionException e) {
+            Assert.assertTrue(e.getMessage(), e.getMessage().contains("older than 1.0.82"));
+            Assert.assertFalse(e.getMessage().contains(FILE_TOKEN_VALUE));
+        }
+        Assert.assertFalse("the builder must not run", Fluxtion.called);
+        assertNoCredentialLeft();
     }
 }

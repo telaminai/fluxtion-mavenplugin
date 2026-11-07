@@ -65,6 +65,7 @@ public class FluxtionSpringToGenMojo extends AbstractFluxtionMojo {
             System.setProperty(OUTPUT_DIRECTORY, outputDirectory);
             System.setProperty(RESOURCES_DIRECTORY, resourcesDirectory);
             URLClassLoader classLoader = buildFluxtionClassLoader();
+            checkBuilder(classLoader);
             ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
             try {
                 Thread.currentThread().setContextClassLoader(classLoader);
@@ -74,6 +75,8 @@ public class FluxtionSpringToGenMojo extends AbstractFluxtionMojo {
             } finally {
                 Thread.currentThread().setContextClassLoader(oldContextClassLoader);
             }
+        } catch (MojoExecutionException refused) {
+            throw refused;
         } catch (Exception exception) {
             logGenerationFailure(exception);
             throw generationFailure("problem setting building fluxtion class loader", exception);

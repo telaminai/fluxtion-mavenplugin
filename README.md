@@ -246,9 +246,10 @@ a secret, so it can go in the POM (`<compilerUrl>` in the plugin configuration),
 placeholder `https://compiler.example.com` for another compiler.
 
 Use plugin 1.3.4 with `com.telamin.fluxtion:fluxtion-builder` **1.0.90 or later** on the project's build classpath.
-The plugin runs every builder in token mode, so none falls back to the key route; a builder before 1.0.90 still
-works with a sign-in, but refuses a signed-out generation with an uncoded message instead of `FLX-1023`, and the
-`scan` goal warns that it should be upgraded.
+Every generation goal (`scan`, `springToFluxtion`, `yamlToFluxtion`) **refuses a builder older than 1.0.82**, which has
+no compiler sign-in and would use the retired key route. A builder from 1.0.82 to 1.0.89 runs in token mode and works
+with a sign-in, but refuses a signed-out generation with an uncoded message instead of `FLX-1023`; the goals warn
+once per build that it should be upgraded.
 
 **A credential is never accepted from a POM.** If a `<token>`, `<apiToken>` or `<credential>` parameter, or a
 credential property such as `fluxtion.remote.token` or `FLUXTION_API_TOKEN`, appears in the POM or one of its
@@ -318,9 +319,11 @@ env:
    `FLX-1022` in ensure mode (which processor, and why it changed), otherwise
    `FLX-1023`, "No compiler sign-in found. Run mvn fluxtion:login (or set FLUXTION_API_TOKEN for CI)."
 
-The plugin always runs the builder in token mode (`fluxtion.remote.auth=token`), with or without a credential, so no
-builder version can fall back to the retired key route. With a credential it also sets `fluxtion.remote.token`,
-`fluxtion.remote.host` and `fluxtion.remote.port` from the compiler URL. These hold only while the builder runs, and
+The plugin runs the builder in token mode (`fluxtion.remote.auth=token`), with or without a credential, so no builder
+it accepts (1.0.82 or later) can fall back to the retired key route; an explicit `-Dfluxtion.remote.auth=session` is
+left alone, with no credential passed. With a credential it also sets `fluxtion.remote.token`, `fluxtion.remote.host`
+and `fluxtion.remote.port` from the compiler URL, and `fluxtion.remote.tokenIssuer`, so builder 1.0.90 sends the
+credential only to that compiler. These hold only while the builder runs, and
 the earlier values are restored afterwards. In a parallel build (`mvn -T`) generation goals take turns, because those
 properties are shared by the whole JVM.
 

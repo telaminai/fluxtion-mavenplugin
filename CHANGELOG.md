@@ -3,19 +3,22 @@
 ## [Unreleased]
 
 ### Breaking: the RapidAPI key route is retired
-- The generation goals never fall back to the RapidAPI key. With no sign-in the builder still runs in token mode
-  (`fluxtion.remote.auth=token`), so no builder version reads `~/.fluxtion/fluxtion.apiKeyFile` or `-Dfluxtion.apiKey`
-  for a Maven build. A client that relied on the key file must sign in: `mvn fluxtion:login` on a developer machine,
+- The generation goals never fall back to the RapidAPI key. Every generation goal refuses a builder older than 1.0.82
+  (no compiler sign-in; it would use the key route). With no sign-in a newer builder still runs in token mode
+  (`fluxtion.remote.auth=token`), so it never reads `~/.fluxtion/fluxtion.apiKeyFile` or `-Dfluxtion.apiKey`. A client that relied on the key file must sign in: `mvn fluxtion:login` on a developer machine,
   `FLUXTION_API_TOKEN` in CI.
 - With no sign-in, a build that must generate stops before sending anything with the builder's coded line
   (`FLX-1023`, "No compiler sign-in found. Run mvn fluxtion:login (or set FLUXTION_API_TOKEN for CI)." from
   fluxtion-builder 1.0.90; `FLX-1022` in ensure mode). An ensure-mode build whose compile request is unchanged still
   reuses its committed processor without a sign-in.
-- Use with `com.telamin.fluxtion:fluxtion-builder` 1.0.90 or later; `scan` warns when the project's builder is older.
+- Use with `com.telamin.fluxtion:fluxtion-builder` 1.0.90 or later; every generation goal warns, once per build, when
+  the project's builder is older (and refuses one older than 1.0.82).
 
 ### Changed
 - `fluxtion:login` with no compiler URL signs in to the managed compiler, `https://compiler.fluxtion-playground.dev`.
 - `FLUXTION_API_TOKEN` with no compiler URL goes to the managed compiler instead of failing the build.
+- A handed-over credential carries its issuer (`fluxtion.remote.tokenIssuer`), so builder 1.0.90 sends it only there.
+- An explicit `-Dfluxtion.remote.auth=session` is no longer overwritten.
 - The credential `fluxtion:login` stores is now also read by fluxtion-builder 1.0.90 itself, so Gradle, JBang and a
   plain `main` find it; its `token` and `url` keys are a contract, pinned by a test.
 
