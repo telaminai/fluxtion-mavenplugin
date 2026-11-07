@@ -59,7 +59,8 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
     /**
      * Chooses the compiler credential (environment, then the stored login, then none) and sets the builder's
      * system properties for it. Returns what to pass to {@link CompilerCredentials#restore(Map)} once the builder
-     * returns. With no credential nothing is set and the builder behaves exactly as before (RapidAPI key mode).
+     * returns. With no credential only token mode is set, so a builder from 1.0.82 on never falls back to the key
+     * route; an older builder is refused by {@link #checkBuilder}.
      */
     protected Map<String, String> applyCompilerAuth() throws MojoExecutionException {
         CompilerCredentials.refusePomCredential(project, token, apiToken, credential);
@@ -151,6 +152,56 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
         }
         String diagnostic = builderDiagnostic(failure);
         return new MojoExecutionException(diagnostic == null ? fallback : diagnostic, failure);
+    }
+
+    /**
+     * A class every builder with token mode has (fluxtion-builder 1.0.82 or later). An older builder ignores the
+     * credential and uses the retired RapidAPI key route, so it is refused before generation. Probed, never initialised.
+     */
+    public static final String TOKEN_MODE_SUPPORT_CLASS =
+            "com.telamin.fluxtion.builder.compile.generation.remote.client.ManagedAuthTransport";
+
+    /**
+     * A class only fluxtion-builder 1.0.90 or later has: the builder that finds a compiler sign-in on its own and
+     * explains a missing one (FLX-1023). Probed, never initialised.
+     */
+    public static final String SIGN_IN_SUPPORT_CLASS =
+            "com.telamin.fluxtion.builder.compile.generation.remote.client.CompilerSignIn";
+
+    /** The classes probed; replaced in tests. */
+    String tokenModeSupportClass = TOKEN_MODE_SUPPORT_CLASS;
+    String signInSupportClass = SIGN_IN_SUPPORT_CLASS;
+
+    /** The 1.0.90 upgrade warning is said once per build, not once per module and goal. */
+    private static final java.util.concurrent.atomic.AtomicBoolean UPGRADE_WARNED =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Test hook: forget that the warning was said. */
+    static void resetUpgradeWarningForTest() {
+        UPGRADE_WARNED.set(false);
+    }
+
+    /**
+     * Before generation, in every generation goal: refuses a builder without token mode (older than 1.0.82), which
+     * would fall back to the retired RapidAPI key route; warns, once per build, about one older than 1.0.90.
+     */
+    protected void checkBuilder(ClassLoader classLoader) throws MojoExecutionException {
+        try {
+            Class.forName(tokenModeSupportClass, false, classLoader);
+        } catch (ClassNotFoundException | LinkageError tooOld) {
+            throw new MojoExecutionException("This project's com.telamin.fluxtion:fluxtion-builder is older than 1.0.82"
+                    + " and has no compiler sign-in: it would use the retired RapidAPI key route. Upgrade the builder"
+                    + " (or the fluxtion-bom) to 1.0.90 or later.");
+        }
+        try {
+            Class.forName(signInSupportClass, false, classLoader);
+        } catch (ClassNotFoundException | LinkageError olderThan1090) {
+            if (UPGRADE_WARNED.compareAndSet(false, true)) {
+                getLog().warn("This project's com.telamin.fluxtion:fluxtion-builder is older than 1.0.90. Upgrade it"
+                        + " (or the fluxtion-bom) to 1.0.90 or later: that builder finds your compiler sign-in on its"
+                        + " own and explains a missing one (FLX-1023).");
+            }
+        }
     }
 
     protected URLClassLoader buildFluxtionClassLoader() throws MalformedURLException, DependencyResolutionRequiredException {

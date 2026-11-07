@@ -231,4 +231,51 @@ public class FluxtionScanToGenMojoTest {
             restore(before);
         }
     }
+
+    /**
+     * Post-G3 L1: the ensure-mode scan (where promotion recovery and reachability run) still hands the builder token
+     * mode with no credential, so builders 1.0.87-1.0.89, whose default was the key route, never fall back to it.
+     */
+    @Test
+    public void ensureModeWithNoCredentialStillRunsTheBuilderInTokenMode() throws Exception {
+        Map<String, String> before = snapshot();
+        try {
+            System.clearProperty("fluxtion.remote.auth");
+            mojo.env = k -> null;
+            mojo.ensureProcessor = true;
+            mojo.execute();
+            Assert.assertEquals("token mode on the ensure path too", "token", Fluxtion.seenAuth);
+            Assert.assertNull(Fluxtion.seenToken);
+            Assert.assertNull("restored afterwards", System.getProperty("fluxtion.remote.auth"));
+        } finally {
+            restore(before);
+        }
+    }
+
+    /** Post-G3 L1: the ensure-mode scan refuses a builder without token mode, and says the 1.0.90 warning. */
+    @Test
+    public void ensureModeChecksTheBuilderToo() throws Exception {
+        Map<String, String> before = snapshot();
+        try {
+            mojo.env = k -> null;
+            mojo.ensureProcessor = true;
+            AbstractFluxtionMojo.resetUpgradeWarningForTest();
+            RecordingLog log = new RecordingLog();
+            mojo.setLog(log);
+            mojo.execute();
+            Assert.assertTrue(log.all(), log.all().contains("older than 1.0.90"));
+
+            Fluxtion.reset();
+            mojo.tokenModeSupportClass = "com.telamin.fluxtion.builder.NotInThisBuilder";
+            try {
+                mojo.execute();
+                Assert.fail("refused");
+            } catch (MojoExecutionException e) {
+                Assert.assertTrue(e.getMessage(), e.getMessage().contains("older than 1.0.82"));
+            }
+            Assert.assertFalse("the builder must not run", Fluxtion.called);
+        } finally {
+            restore(before);
+        }
+    }
 }
