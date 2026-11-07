@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-07
+
 ### Breaking: the RapidAPI key route is retired
 - The generation goals never fall back to the RapidAPI key. Every generation goal refuses a builder older than 1.0.82
   (no compiler sign-in; it would use the key route). With no sign-in a newer builder still runs in token mode
