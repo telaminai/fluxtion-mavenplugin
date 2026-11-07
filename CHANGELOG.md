@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Breaking: the RapidAPI key route is retired
+- The generation goals never fall back to the RapidAPI key. With no sign-in the builder still runs in token mode
+  (`fluxtion.remote.auth=token`), so no builder version reads `~/.fluxtion/fluxtion.apiKeyFile` or `-Dfluxtion.apiKey`
+  for a Maven build. A client that relied on the key file must sign in: `mvn fluxtion:login` on a developer machine,
+  `FLUXTION_API_TOKEN` in CI.
+- With no sign-in, a build that must generate stops before sending anything with the builder's coded line
+  (`FLX-1023`, "No compiler sign-in found. Run mvn fluxtion:login (or set FLUXTION_API_TOKEN for CI)." from
+  fluxtion-builder 1.0.90; `FLX-1022` in ensure mode). An ensure-mode build whose compile request is unchanged still
+  reuses its committed processor without a sign-in.
+- Use with `com.telamin.fluxtion:fluxtion-builder` 1.0.90 or later; `scan` warns when the project's builder is older.
+
+### Changed
+- `fluxtion:login` with no compiler URL signs in to the managed compiler, `https://compiler.fluxtion-playground.dev`.
+- `FLUXTION_API_TOKEN` with no compiler URL goes to the managed compiler instead of failing the build.
+- The credential `fluxtion:login` stores is now also read by fluxtion-builder 1.0.90 itself, so Gradle, JBang and a
+  plain `main` find it; its `token` and `url` keys are a contract, pinned by a test.
+
 ## [1.3.3] - 2026-11-06
 
 ### Upgrading from ≤1.0.86

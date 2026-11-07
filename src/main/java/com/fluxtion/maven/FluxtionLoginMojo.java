@@ -20,7 +20,10 @@ import java.util.function.LongSupplier;
  * Signs this machine in to the Fluxtion compiler with the device authorisation flow and stores the resulting
  * credential in {@code ~/.fluxtion/credentials} (owner-only). Interactive: refuses to run when {@code CI} is set.
  *
- * <pre>mvn com.telamin.fluxtion:fluxtion-maven-plugin:login -Dfluxtion.compilerUrl=https://compiler.example.com</pre>
+ * <pre>mvn com.telamin.fluxtion:fluxtion-maven-plugin:login</pre>
+ *
+ * signs in to the managed compiler; {@code -Dfluxtion.compilerUrl=https://compiler.example.com} (or
+ * {@code FLUXTION_COMPILER_URL}) signs in to another.
  */
 @Mojo(name = "login", requiresProject = false, aggregator = true, threadSafe = true)
 public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
@@ -47,11 +50,7 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         }
         CredentialStore store = credentialStore();
         CredentialStore.Stored previous = readQuietly(store);
-        CompilerUrl url = compilerUrl(previous == null ? null : previous.url);
-        if (url == null) {
-            throw new MojoFailureException("No compiler URL. Pass -Dfluxtion.compilerUrl=https://<compiler host>,"
-                    + " set FLUXTION_COMPILER_URL, or set <compilerUrl> in the plugin configuration.");
-        }
+        CompilerUrl url = compilerUrl(previous == null ? CompilerCredentials.DEFAULT_COMPILER_URL : previous.url);
         CompilerAuthClient client = clientFactory.apply(url);
 
         CompilerAuthClient.DeviceAuthorization auth;

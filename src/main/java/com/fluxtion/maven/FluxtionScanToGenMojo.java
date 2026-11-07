@@ -71,6 +71,16 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
     /** The class probed for ensure support; replaced in tests. */
     String ensureSupportClass = ENSURE_SUPPORT_CLASS;
 
+    /**
+     * A class only fluxtion-builder 1.0.90 or later has: the builder that reads a compiler sign-in itself and refuses a
+     * signed-out generation with FLX-1023. Probed, never initialised.
+     */
+    public static final String SIGN_IN_SUPPORT_CLASS =
+            "com.telamin.fluxtion.builder.compile.generation.remote.client.CompilerSignIn";
+
+    /** The class probed for 1.0.90 sign-in support; replaced in tests. */
+    String signInSupportClass = SIGN_IN_SUPPORT_CLASS;
+
     @Override
     public void execute() throws MojoExecutionException {
         if (System.getProperty("skipFluxtion") != null) {
@@ -109,6 +119,7 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             if (ensureProcessor) {
                 requireEnsureSupport(classLoader);
             }
+            warnOnABuilderBefore1090(classLoader);
             ClassLoader oldContextClassLoader = Thread.currentThread().getContextClassLoader();
             try {
                 Thread.currentThread().setContextClassLoader(classLoader);
@@ -159,6 +170,20 @@ public class FluxtionScanToGenMojo extends AbstractFluxtionMojo {
             throw new MojoExecutionException("ensureProcessor needs com.telamin.fluxtion:fluxtion-builder 1.0.87 or"
                     + " later on the project's build classpath; this project's builder has no ensure support ("
                     + ensureSupportClass + " not found). Upgrade the builder, or remove ensureProcessor.");
+        }
+    }
+
+    /**
+     * The plugin runs every builder in token mode, so none falls back to the retired key route. A builder before 1.0.90
+     * then refuses a signed-out generation with an uncoded message rather than FLX-1023; say which version fixes that.
+     */
+    private void warnOnABuilderBefore1090(ClassLoader classLoader) {
+        try {
+            Class.forName(signInSupportClass, false, classLoader);
+        } catch (ClassNotFoundException | LinkageError oldBuilder) {
+            getLog().warn("This project's com.telamin.fluxtion:fluxtion-builder is older than 1.0.90. Upgrade it (or the"
+                    + " fluxtion-bom) to 1.0.90 or later: the RapidAPI key route is retired, and 1.0.90 is the builder"
+                    + " that finds your compiler sign-in on its own and explains a missing one (FLX-1023).");
         }
     }
 

@@ -27,15 +27,19 @@ import java.util.regex.Pattern;
  * Which compiler credential a generation goal uses, and how it reaches the in-process Fluxtion builder.
  *
  * <p>Precedence: the {@value #ENV_TOKEN} environment variable (CI), then the credential stored by
- * {@code fluxtion:login}, then none. With a credential the builder runs in token mode
- * ({@code fluxtion.remote.auth=token}, {@code fluxtion.remote.token}); with none, nothing is set and the builder's
- * existing RapidAPI-key behaviour is untouched. A credential is never accepted from a POM.</p>
+ * {@code fluxtion:login}, then none. The builder always runs in token mode ({@code fluxtion.remote.auth=token});
+ * with a credential the plugin also passes it ({@code fluxtion.remote.token}) and the compiler's address. With none,
+ * only the mode is set: there is no key route to fall back to, so a build that must generate stops before sending
+ * anything (fluxtion-builder 1.0.90: {@code FLX-1023}), while an ensure-mode build whose compile request is unchanged
+ * reuses its committed processor. A credential is never accepted from a POM.</p>
  */
 final class CompilerCredentials {
 
     static final String ENV_TOKEN = "FLUXTION_API_TOKEN";
     static final String ENV_URL = "FLUXTION_COMPILER_URL";
     static final String ENV_CI = "CI";
+    /** The managed compiler, used when a credential is present and no compiler URL is configured. */
+    static final String DEFAULT_COMPILER_URL = "https://compiler.fluxtion-playground.dev";
 
     static final String PROP_AUTH = "fluxtion.remote.auth";
     static final String PROP_TOKEN = "fluxtion.remote.token";
@@ -78,8 +82,8 @@ final class CompilerCredentials {
 
     /**
      * The system properties carry one credential for the whole JVM, so two generation goals running in parallel
-     * ({@code mvn -T}) must not overlap: one would restore (clear) the other's credential mid-generation, sending
-     * that generation down the RapidAPI path, and the last to restore would put a credential back for good.
+     * ({@code mvn -T}) must not overlap: one would restore (clear) the other's credential mid-generation, leaving
+     * that generation signed out, and the last to restore would put a credential back for good.
      */
     private static final ReentrantLock BUILDER_PROPERTIES = new ReentrantLock();
 
@@ -176,12 +180,8 @@ final class CompilerCredentials {
         String envToken = env.apply(ENV_TOKEN);
         if (envToken != null && !envToken.trim().isEmpty()) {
             CompilerUrl url = parseUrl(configuredUrl);
-            if (url == null) {
-                // without a URL the builder would send the bearer credential to its default host, the RapidAPI gateway
-                throw new MojoExecutionException(ENV_TOKEN + " is set but no compiler URL is configured, so there is"
-                        + " nowhere safe to send it. Set " + ENV_URL + " or the plugin's <compilerUrl>.");
-            }
-            return new Resolved(Source.ENVIRONMENT, envToken.trim(), url);
+            // no URL configured: the managed compiler, whose credentials FLUXTION_API_TOKEN normally holds
+            return new Resolved(Source.ENVIRONMENT, envToken.trim(), url != null ? url : CompilerUrl.parse(DEFAULT_COMPILER_URL));
         }
         CredentialStore.Stored stored;
         try {
@@ -224,15 +224,18 @@ final class CompilerCredentials {
 
     /**
      * Sets the builder's system properties for this credential and returns the earlier values, for
-     * {@link #restore(Map)} once the builder returns. With no credential nothing is set (default mode).
+     * {@link #restore(Map)} once the builder returns. Token mode is always set, so no builder version, old or new,
+     * falls back to the retired RapidAPI key route; with no credential nothing else is set.
      */
     static Map<String, String> apply(Resolved r, Log log) {
         Map<String, String> previous = new LinkedHashMap<>();
-        if (r.source == Source.NONE) {
-            return previous;
-        }
         BUILDER_PROPERTIES.lock(); // released by restore()
         set(previous, PROP_AUTH, "token");
+        if (r.source == Source.NONE) {
+            log.info("Fluxtion compiler: no sign-in (mvn fluxtion:login, or " + ENV_TOKEN + " in CI). A committed"
+                    + " processor whose compile request is unchanged is reused; generating needs a sign-in.");
+            return previous;
+        }
         set(previous, PROP_TOKEN, r.token);
         if (r.url != null) {
             set(previous, PROP_HOST, r.url.builderHost());

@@ -69,26 +69,59 @@ public class CompilerCredentialsTest {
         mojo.credentialStore.write(new CredentialStore.Stored(FILE_TOKEN_VALUE, "cred-file", "acct-1", url));
     }
 
+    /**
+     * RAPID-OFF: with no credential the builder still runs in token mode, so no builder (1.0.82 onwards) falls back
+     * to the retired RapidAPI key route. Nothing else is passed: no token, no address. The builder decides: reuse an
+     * unchanged committed processor, or stop before sending (FLX-1023 from fluxtion-builder 1.0.90).
+     */
     @Test
-    public void defaultModeSetsNoAuthProperty() throws Exception {
+    public void withNoCredentialTheBuilderStillRunsInTokenMode_neverAKeyMode() throws Exception {
         mojo.execute();
         Assert.assertTrue(Fluxtion.called);
-        Assert.assertNull("default (RapidAPI key) mode passes no fluxtion.remote.auth", Fluxtion.seenAuth);
+        Assert.assertEquals("token mode, so no builder can fall back to a key route", "token", Fluxtion.seenAuth);
         Assert.assertNull(Fluxtion.seenToken);
         Assert.assertNull(Fluxtion.seenHost);
         Assert.assertNull(Fluxtion.seenPort);
+        Assert.assertTrue(log.all(), log.all().contains("no sign-in"));
+        assertNoCredentialLeft();
     }
 
-    /**
-     * Backward compatibility: with no credential anywhere, a build behaves exactly as before this plugin knew about
-     * compiler accounts, even if FLUXTION_COMPILER_URL holds something that is not a valid compiler URL.
-     */
+    @Test
+    public void aBuilderBefore1090IsToldToUpgrade_andA1090BuilderIsNot() throws Exception {
+        mojo.execute();
+        Assert.assertTrue(log.all(), log.all().contains("older than 1.0.90"));
+        RecordingLog quiet = new RecordingLog();
+        mojo.setLog(quiet);
+        mojo.signInSupportClass = "com.telamin.fluxtion.Fluxtion"; // stands in for the 1.0.90 class
+        mojo.execute();
+        Assert.assertFalse(quiet.all(), quiet.all().contains("older than 1.0.90"));
+    }
+
+    /** With no credential the compiler URL is not used, so an invalid one in the environment is not an error. */
     @Test
     public void withNoCredential_anInvalidCompilerUrlInTheEnvironmentIsIgnored() throws Exception {
         env.put("FLUXTION_COMPILER_URL", "not a url at all");
         mojo.execute();
         Assert.assertTrue(Fluxtion.called);
-        Assert.assertNull("default mode: no auth property", Fluxtion.seenAuth);
+        Assert.assertEquals("token", Fluxtion.seenAuth);
+        Assert.assertNull(Fluxtion.seenHost);
+    }
+
+    /** No credential and the builder refuses with FLX-1023: that line is the build failure, nothing else. */
+    @Test
+    public void withNoCredentialTheBuildersNoSignInRefusalIsTheBuildFailure() throws Exception {
+        String line = "FLX-1023  ERROR  No compiler sign-in found. Run `mvn fluxtion:login` (or set"
+                + " FLUXTION_API_TOKEN for CI).";
+        Fluxtion.failWith = new AbstractFluxtionMojoTest.FabricatedDiagnosticException("FLX-1023", line,
+                new AbstractFluxtionMojoTest.FabricatedDiagnosticException("FLX-1023",
+                        "No compiler sign-in found. Run `mvn fluxtion:login` (or set FLUXTION_API_TOKEN for CI).", null));
+        try {
+            mojo.execute();
+            Assert.fail("the refusal fails the build");
+        } catch (MojoExecutionException e) {
+            Assert.assertEquals(line, e.getMessage());
+        }
+        assertNoCredentialLeft();
     }
 
     @Test
@@ -115,18 +148,15 @@ public class CompilerCredentialsTest {
         assertNoCredentialLeft();
     }
 
+    /** CI with FLUXTION_API_TOKEN alone: the managed compiler, whose credentials that variable normally holds. */
     @Test
-    public void environmentTokenWithoutUrlIsRefused() throws Exception {
-        // without a URL the builder would post the bearer credential to its default host, the RapidAPI gateway
+    public void environmentTokenWithoutUrlGoesToTheManagedCompiler() throws Exception {
         env.put("FLUXTION_API_TOKEN", ENV_TOKEN_VALUE);
-        try {
-            mojo.execute();
-            Assert.fail("expected refusal");
-        } catch (MojoExecutionException e) {
-            Assert.assertTrue(e.getMessage(), e.getMessage().contains("FLUXTION_COMPILER_URL"));
-            Assert.assertFalse(e.getMessage().contains(ENV_TOKEN_VALUE));
-        }
-        Assert.assertFalse("the builder must not run", Fluxtion.called);
+        mojo.execute();
+        Assert.assertEquals("token", Fluxtion.seenAuth);
+        Assert.assertEquals(ENV_TOKEN_VALUE, Fluxtion.seenToken);
+        Assert.assertEquals("https://compiler.fluxtion-playground.dev", Fluxtion.seenHost);
+        Assert.assertEquals("443", Fluxtion.seenPort);
         assertNoCredentialLeft();
     }
 

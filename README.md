@@ -236,13 +236,19 @@ build, nor another plugin that sets the same properties.
 
 ## Signing in to the Fluxtion compiler
 
-The generation goals can use a Fluxtion compiler account instead of a RapidAPI key. The compiler's address is
-not a secret, so it can go in the POM (`<compilerUrl>` in the plugin configuration), on the command line
-(`-Dfluxtion.compilerUrl=...`) or in the `FLUXTION_COMPILER_URL` environment variable. The examples use the
-placeholder `https://compiler.example.com`.
+Generating a processor needs a Fluxtion compiler sign-in. **The RapidAPI key route is retired** (plugin 1.3.4,
+fluxtion-builder 1.0.90): `~/.fluxtion/fluxtion.apiKeyFile` and `-Dfluxtion.apiKey` are no longer read, and a build
+with no sign-in never falls back to a key. That is a breaking change for any client that relied on the key file.
 
-Compiler accounts need plugin 1.3.1 or later and `com.telamin.fluxtion:fluxtion-builder` **1.0.82 or later** on the
-project's build classpath. An older builder ignores the credential and uses the RapidAPI key.
+The managed compiler, `https://compiler.fluxtion-playground.dev`, is the default. Another compiler's address is not
+a secret, so it can go in the POM (`<compilerUrl>` in the plugin configuration), on the command line
+(`-Dfluxtion.compilerUrl=...`) or in the `FLUXTION_COMPILER_URL` environment variable. The examples use the
+placeholder `https://compiler.example.com` for another compiler.
+
+Use plugin 1.3.4 with `com.telamin.fluxtion:fluxtion-builder` **1.0.90 or later** on the project's build classpath.
+The plugin runs every builder in token mode, so none falls back to the key route; a builder before 1.0.90 still
+works with a sign-in, but refuses a signed-out generation with an uncoded message instead of `FLX-1023`, and the
+`scan` goal warns that it should be upgraded.
 
 **A credential is never accepted from a POM.** If a `<token>`, `<apiToken>` or `<credential>` parameter, or a
 credential property such as `fluxtion.remote.token` or `FLUXTION_API_TOKEN`, appears in the POM or one of its
@@ -251,7 +257,8 @@ profiles, the build fails and says to use the environment variable or `fluxtion:
 ### Developer machine: `mvn fluxtion:login`
 
 ```bash
-mvn fluxtion:login -Dfluxtion.compilerUrl=https://compiler.example.com
+mvn fluxtion:login                                               # the managed compiler
+mvn fluxtion:login -Dfluxtion.compilerUrl=https://compiler.example.com   # another compiler
 ```
 
 The goal prints a short code and a verification address. Open the address, enter the code and approve. If a
@@ -281,6 +288,10 @@ before anything is written to it. The plugin never writes the credential anywher
 (`mvn com.telamin.fluxtion:fluxtion-maven-plugin:<version>:login`) or add `com.telamin.fluxtion` to
 `<pluginGroups>` in `~/.m2/settings.xml`.
 
+The stored credential is not only for Maven: fluxtion-builder 1.0.90 reads `~/.fluxtion/credentials` itself, so a
+Gradle build, a JBang script or a plain `main` on the same machine generates with no extra flags. Its format
+(a properties file whose `token` is the secret and whose `url` is the issuing compiler) is that contract.
+
 ### CI: `FLUXTION_API_TOKEN`
 
 CI never signs in interactively, and `fluxtion:login` refuses to run when the `CI` environment variable (or a
@@ -292,21 +303,26 @@ a secret that the build sees as `FLUXTION_API_TOKEN`:
 # GitHub Actions
 env:
   FLUXTION_API_TOKEN: ${{ secrets.FLUXTION_API_TOKEN }}
-  FLUXTION_COMPILER_URL: https://compiler.example.com
+  # only for an account on a compiler other than the managed one:
+  # FLUXTION_COMPILER_URL: https://compiler.example.com
 ```
 
 ### Which credential is used
 
-1. `FLUXTION_API_TOKEN`, if it is set. A compiler URL (`FLUXTION_COMPILER_URL` or `<compilerUrl>`) is then
-   required: the build fails rather than send the credential to the builder's default host.
+1. `FLUXTION_API_TOKEN`, if it is set, sent to the compiler URL (`FLUXTION_COMPILER_URL` or `<compilerUrl>`), or
+   to the managed compiler when none is configured.
 2. Otherwise, the credential stored by `fluxtion:login`, sent only to the compiler that issued it. If
    `compilerUrl` names a different compiler, the build fails and says to sign in to that one.
-3. Otherwise, nothing changes: the builder uses your RapidAPI key as before.
+3. Otherwise, no sign-in. A build in ensure mode whose compile request is unchanged reuses its committed processor
+   and sends nothing. A build that must generate stops before sending anything, with the builder's coded line:
+   `FLX-1022` in ensure mode (which processor, and why it changed), otherwise
+   `FLX-1023`, "No compiler sign-in found. Run mvn fluxtion:login (or set FLUXTION_API_TOKEN for CI)."
 
-With a credential, the plugin runs the builder in token mode (the system properties `fluxtion.remote.auth=token`
-and `fluxtion.remote.token`, plus `fluxtion.remote.host` and `fluxtion.remote.port` from the compiler URL) only
-while the builder runs, and restores the earlier values afterwards. In a parallel build (`mvn -T`) generation
-goals that use a credential take turns, because those properties are shared by the whole JVM.
+The plugin always runs the builder in token mode (`fluxtion.remote.auth=token`), with or without a credential, so no
+builder version can fall back to the retired key route. With a credential it also sets `fluxtion.remote.token`,
+`fluxtion.remote.host` and `fluxtion.remote.port` from the compiler URL. These hold only while the builder runs, and
+the earlier values are restored afterwards. In a parallel build (`mvn -T`) generation goals take turns, because those
+properties are shared by the whole JVM.
 
 Committed configuration is checked as well as the POM: a credential property in a parent POM or in
 `.mvn/maven.config` / `.mvn/jvm.config` also fails the build.

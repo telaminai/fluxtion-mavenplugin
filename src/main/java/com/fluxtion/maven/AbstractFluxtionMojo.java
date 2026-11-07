@@ -59,7 +59,7 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
     /**
      * Chooses the compiler credential (environment, then the stored login, then none) and sets the builder's
      * system properties for it. Returns what to pass to {@link CompilerCredentials#restore(Map)} once the builder
-     * returns. With no credential nothing is set and the builder behaves exactly as before (RapidAPI key mode).
+     * returns. With no credential only token mode is set: there is no key route to fall back to.
      */
     protected Map<String, String> applyCompilerAuth() throws MojoExecutionException {
         CompilerCredentials.refusePomCredential(project, token, apiToken, credential);
