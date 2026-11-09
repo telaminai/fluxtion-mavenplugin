@@ -64,7 +64,7 @@ public abstract class AbstractFluxtionMojo extends AbstractMojo {
      */
     protected Map<String, String> applyCompilerAuth() throws MojoExecutionException {
         CompilerCredentials.refusePomCredential(project, token, apiToken, credential);
-        CompilerCredentials.Resolved resolved = CompilerCredentials.resolve(env, credentialStore(),
+        CompilerCredentials.Resolved resolved = CompilerCredentials.resolveForBuild(env, credentialStore(),
                 CompilerCredentials.configuredUrl(compilerUrl, env), getLog());
         return CompilerCredentials.apply(resolved, getLog());
     }

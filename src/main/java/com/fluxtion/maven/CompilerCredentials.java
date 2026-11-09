@@ -63,8 +63,14 @@ final class CompilerCredentials {
         final Source source;
         final String token;
         final CompilerUrl url;
+        final boolean unreadableStore;
 
         Resolved(Source source, String token, CompilerUrl url) {
+            this(source, token, url, false);
+        }
+
+        Resolved(Source source, String token, CompilerUrl url, boolean unreadableStore) {
+            this.unreadableStore = unreadableStore;
             this.source = source;
             this.token = token;
             this.url = url;
@@ -179,6 +185,17 @@ final class CompilerCredentials {
     /** Applies the precedence: environment, then the stored file, then none. */
     static Resolved resolve(Function<String, String> env, CredentialStore store, String configuredUrl, Log log)
             throws MojoExecutionException {
+        return resolve(env,store,configuredUrl,log,false);
+    }
+
+    /** A read failure must not prevent the builder deciding whether an unchanged processor can be reused. */
+    static Resolved resolveForBuild(Function<String,String> env, CredentialStore store, String configuredUrl, Log log)
+            throws MojoExecutionException {
+        return resolve(env,store,configuredUrl,log,true);
+    }
+
+    private static Resolved resolve(Function<String,String> env, CredentialStore store, String configuredUrl, Log log,
+                                    boolean build) throws MojoExecutionException {
         // the URL is parsed only when a credential will be sent: a build with no credential behaves exactly as before
         // this plugin knew about compiler accounts, whatever FLUXTION_COMPILER_URL happens to hold
         String envToken = env.apply(ENV_TOKEN);
@@ -190,9 +207,15 @@ final class CompilerCredentials {
         CredentialStore.Stored stored;
         try {
             stored = store.read();
-        } catch (IOException e) {
-            throw new MojoExecutionException("Could not read the stored compiler credential at " + store.file()
-                    + " (" + e.getMessage() + "). Run mvn fluxtion:logout and sign in again.", e);
+        } catch (IOException | LinkageError e) {
+            if(build) {
+                log.warn("Compiler sign-in could not be read; continuing without a stored credential. "
+                        + "An unchanged committed processor can be reused; generation still requires sign-in. "
+                        + "Check the credential path, permissions and native filesystem support.");
+                return new Resolved(Source.NONE,null,null,true);
+            }
+            throw new MojoExecutionException("Could not read the stored compiler sign-in. "
+                    + "Check the credential path, permissions and native filesystem support. Nothing changed; no request sent.");
         }
         if (stored != null) {
             if (store.tooOpen()) {
@@ -230,7 +253,8 @@ final class CompilerCredentials {
      * Sets the builder's system properties for this credential and returns the earlier values, for
      * {@link #restore(Map)} once the builder returns. Token mode is set, so a builder from 1.0.82 on never falls back to
      * the retired RapidAPI key route (an older builder is refused before generation); with no credential nothing else
-     * is set. An explicit {@code fluxtion.remote.auth=session} is respected and left alone, with no credential passed.
+     * is set unless a stored-read failed, in which case the older builder's independent credential lookup is
+     * suppressed for this invocation. An explicit {@code fluxtion.remote.auth=session} is respected and left alone, with no credential passed.
      */
     static Map<String, String> apply(Resolved r, Log log) {
         Map<String, String> previous = new LinkedHashMap<>();
@@ -243,6 +267,14 @@ final class CompilerCredentials {
         BUILDER_PROPERTIES.lock(); // released by restore()
         set(previous, PROP_AUTH, "token");
         if (r.source == Source.NONE) {
+            if (r.unreadableStore) {
+                // Older builders independently read the store. A filesystem root cannot be a regular
+                // credential file: suppress that second read for this call, then restore every property.
+                set(previous, "fluxtion.credentialsFile", java.nio.file.Paths.get("").toAbsolutePath().getRoot().toString());
+                clear(previous, PROP_TOKEN);
+                clear(previous, "fluxtion.api.token");
+                clear(previous, PROP_TOKEN_ISSUER);
+            }
             log.info("Fluxtion compiler: no sign-in (mvn fluxtion:login, or " + ENV_TOKEN + " in CI). A committed"
                     + " processor whose compile request is unchanged is reused; generating needs a sign-in.");
             return previous;
@@ -289,6 +321,11 @@ final class CompilerCredentials {
         } finally {
             if (BUILDER_PROPERTIES.isHeldByCurrentThread()) BUILDER_PROPERTIES.unlock();
         }
+    }
+
+    private static void clear(Map<String, String> previous, String key) {
+        previous.put(key, System.getProperty(key));
+        System.clearProperty(key);
     }
 
     private static void set(Map<String, String> previous, String key, String value) {

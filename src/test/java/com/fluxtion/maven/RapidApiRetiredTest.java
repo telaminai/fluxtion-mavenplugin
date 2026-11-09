@@ -76,7 +76,7 @@ public class RapidApiRetiredTest {
         try {
             m.execute();
             Assert.fail("the stub stops the sign-in");
-        } catch (IllegalStateException expected) {
+        } catch (org.apache.maven.plugin.MojoExecutionException expected) {
             // the stub
         }
         Assert.assertEquals("https://compiler.fluxtion-playground.dev", String.valueOf(seen[0]));

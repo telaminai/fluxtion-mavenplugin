@@ -153,15 +153,17 @@ final class CompilerAuthClient {
      */
     Issued pollForToken(DeviceAuthorization auth, Sleeper sleeper, LongSupplier clockMillis)
             throws IOException, DeviceFlowException, InterruptedException {
-        long deadline = clockMillis.getAsLong() + auth.expiresInSeconds * 1000L;
-        long interval = auth.intervalSeconds;
+        long lifetime = Math.min(Math.max(0L, auth.expiresInSeconds), 1800L) * 1000L;
+        long started = clockMillis.getAsLong();
+        long deadline = started > Long.MAX_VALUE - lifetime ? Long.MAX_VALUE : started + lifetime;
+        long interval = Math.min(Math.max(1L, auth.intervalSeconds), 1800L);
         String body = "{\"device_code\":" + Json.quote(auth.deviceCode) + ",\"device_name\":" + Json.quote(deviceName()) + "}";
         int failures = 0;
         while (true) {
             if (clockMillis.getAsLong() >= deadline) {
                 throw expired();
             }
-            sleeper.sleep(interval * 1000L);
+            sleeper.sleep(Math.min(interval * 1000L, Math.max(0L, deadline - clockMillis.getAsLong())));
             if (clockMillis.getAsLong() >= deadline) {
                 throw expired();
             }
@@ -188,7 +190,7 @@ final class CompilerAuthClient {
                 if (++failures >= MAX_CONSECUTIVE_FAILURES) {
                     throw new IOException("the compiler service is not answering sign-in polls: " + describe(r));
                 }
-                interval += SLOW_DOWN_SECONDS;
+                interval = Math.min(1800L, interval + SLOW_DOWN_SECONDS);
                 continue;
             }
             failures = 0;
@@ -197,7 +199,7 @@ final class CompilerAuthClient {
                 continue;
             }
             if ("slow_down".equals(error)) {
-                interval += SLOW_DOWN_SECONDS;
+                interval = Math.min(1800L, interval + SLOW_DOWN_SECONDS);
                 continue;
             }
             if ("access_denied".equals(error)) {
@@ -210,6 +212,18 @@ final class CompilerAuthClient {
             throw new DeviceFlowException(DeviceFlowException.Reason.FAILED,
                     "sign-in failed: HTTP " + r.status + "; run mvn fluxtion:login again to retry");
         }
+    }
+
+    static final class CredentialRejected extends IOException {
+        CredentialRejected() { super("the service refused the credential"); }
+    }
+
+    /** Identity of this exact bearer; no email requested or credential echoed. */
+    Map<String, Object> me(String token) throws IOException {
+        Response r = send("GET", "/v1/me", null, token);
+        if (r.status == 401) throw new CredentialRejected();
+        if (r.status != 200) throw new IOException("account unavailable (HTTP " + r.status + ")");
+        return parse(r);
     }
 
     /** {@code GET /v1/usage}: the account's plan and allowance, as returned. */

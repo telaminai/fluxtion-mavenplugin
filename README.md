@@ -404,3 +404,78 @@ mvn compile -DskipFluxtion
 
 
 
+
+## Diagnose a compiler plan refusal
+
+With a plugin build containing the `account` goal, run `mvn fluxtion:account` in the same project and environment
+as the failed build. Outside a configured project, use the fully qualified goal with that plugin version:
+`mvn com.telamin.fluxtion:fluxtion-maven-plugin:<version>:account`.
+This new goal is not in released 1.3.4. It reads identity and usage; it does not generate or change the account.
+
+The output names the compiler service, credential source, server-confirmed account ID and effective limits.
+`FLUXTION_API_TOKEN` takes precedence over saved Maven sign-in, just as in the build. Use the same
+`-Dfluxtion.compilerUrl=...` setting if you configured one. The command never prints the token. A missing usage
+scope can prevent reading limits even when identity was verified. A failed diagnostic exits nonzero.
+
+For support, copy the failed build's `accountId`, request ID (`fx-...`), compiler version, service, and refusal
+(for example requested inputs versus allowed inputs). The request ID appears beside the HTTP status; newer
+services also include it in the JSON body, and HTTP clients receive `X-Fluxtion-Request-Id`. Do not send credential
+files or tokens. If an older service omits the account ID, use this goal without changing sign-in first.
+
+The Analyser's **Compiler account → Copy details** describes its own connection. It can use a different account
+from Maven or CI; it is not proof of the account that compiled your application. An input limit counts distinct
+event types plus exported service methods, not processed records. Support can investigate the account/request
+pair and review an entitlement; repeatedly compiling or buying compile credits does not raise a graph-size limit.
+After support confirms the effective limit, rerun your original authoring command and check its fresh evidence.
+
+The `account` goal runs once per reactor. If a POM execution configures a different compiler URL,
+it stops before credential resolution or any request. Repeat with explicit
+`-Dfluxtion.compilerUrl=<the build's service URL>` to select the intended service.
+The account goal is available in plugin `1.3.5` and later.
+
+### Agent-readable sign-in (1.3.5)
+
+Plugin 1.3.5 emits `FLUXTION-AUTH` JSON records among normal Maven output. Match records by `attemptId`:
+`pending` provides the browser verification address, user code and expiry; terminal events are `signed_in`,
+`denied`, `expired`, `cancelled`, `service_error` or `usage_error`. Maven still owns the process exit status.
+An approval is not reported as signed in until `/v1/me` confirms its account. Repeating login verifies the existing
+credential; `-Dfluxtion.login.force=true` requests a fresh approval. An outage leaves identity unknown.
+An environment token overrides saved sign-in: login refuses to change it and directs the user to `account`.
+
+Before printing either browser address, login checks its exact HTTPS origin against
+`-Dfluxtion.login.verificationOrigin=https://<trusted-provider-host>`, supplied explicitly in your terminal or user JVM options.
+A project POM cannot choose this trust root; `.mvn/maven.config` and `.mvn/jvm.config` overrides are refused.
+This is the identity provider's origin,
+not the compiler or admin website. The staging compiler has an exact operator-confirmed default. Production
+is pinned to `https://restful-nature-87.authkit.app`, as confirmed by the owner. Never derive this trusted
+setting from an unverified response.
+Agents relay only the code and validated address; never read a credential file or request an API key.
+Agents using older plugin versions must continue to interpret their human-readable output.
+
+### One active machine sign-in
+
+The candidate Analyser and Maven share the existing properties-format credential file. New writers use a persistent
+`credentials.lock`, owner-only atomic writes, and compare-before-replace/delete. A delayed logout cannot delete a
+newer sign-in. The home prefix (or an explicit file override's existing parent prefix) is resolved once; links in the
+store-owned directory and its credential, lock or temporary files are refused. Old clients do not use this lock;
+upgrade them before relying on concurrent-write protection. Released plugin 1.3.4 also replaces a different service's
+sign-in without a confirmation flag: obtain the user's confirmation before using its login command to switch services.
+The Analyser offers an explicit, verified migration
+from its former OS store; neither client silently falls back to that old copy.
+
+To switch compiler service, select `-Dfluxtion.compilerUrl=...` and explicitly confirm
+`-Dfluxtion.login.replaceService=true`. Successful approval replaces the machine sign-in and attempts to revoke the
+previous credential at its original issuer. Failed approval leaves the old sign-in intact. Revocation warnings mean
+support or the user should check that account's devices. `logout` never removes an environment token.
+
+A generation goal whose saved sign-in cannot be read (including unavailable native file support) warns and gives the
+builder no stored credential. This permits unchanged ensure-mode processors to be reused; generation remains subject
+to the builder's normal sign-in refusal. The explicit `account` goal fails closed with path/permission guidance instead
+of recommending a logout that cannot read the same file. No read failure falls back to a legacy key or another service.
+Equivalent scheme/host case and default ports are normalized. `localhost` and `127.0.0.1` compare as one local service,
+without changing the transport hostname; IPv6 and other loopback addresses remain distinct, and no DNS lookup establishes trust.
+The trusted provider can itself redirect a browser; provider-side open-redirect prevention remains that provider's responsibility.
+
+Project `.mvn/maven.config` and `.mvn/jvm.config` must not mention the verification-origin override or use `@argfiles` during interactive login. This conservative refusal includes comments; move a trusted override to the user's command line or user JVM environment and remove the project reference. This is a configuration boundary, not a sandbox for arbitrary Maven extensions or executable JVM code.
+
+If generation cannot safely read the stored sign-in, it temporarily prevents older builders from re-reading that store or using token system properties. The properties are restored after the builder call. Unchanged ensure builds can still reuse their processor; generation requiring authentication fails signed out. Explicit account/login/logout operations still fail closed.

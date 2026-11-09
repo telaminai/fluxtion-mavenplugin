@@ -45,6 +45,7 @@ public class LoginLogoutMojoTest {
         m.credentialStore = store;
         m.compilerUrl = server.url();
         m.browser = false;
+        m.verificationOrigin = "https://login.example.com";
         m.sleeper = millis -> now[0] += millis;
         m.clockMillis = () -> now[0];
         m.setLog(log);
@@ -105,7 +106,7 @@ public class LoginLogoutMojoTest {
         Assert.assertFalse("credential printed", out.contains(StubCompilerServer.TOKEN));
         Assert.assertFalse("device code printed", out.contains(StubCompilerServer.DEVICE_CODE));
         try (java.util.stream.Stream<Path> files = Files.list(store.file().getParent())) {
-            Assert.assertEquals("only the credential is left behind", 1, files.count());
+            Assert.assertEquals("credential and persistent non-secret lock remain", 2, files.count());
         }
     }
 
@@ -209,4 +210,38 @@ public class LoginLogoutMojoTest {
         Assert.assertTrue(text.contains("token="));
         Assert.assertTrue(text.contains("Do not commit"));
     }
+    @Test public void logoutRacingAReplacementRetainsTheNewCredential() throws Exception {
+        CredentialStore.Stored before=new CredentialStore.Stored(StubCompilerServer.TOKEN,"cred1","acct-42",server.url());
+        CredentialStore.Stored after=new CredentialStore.Stored("synthetic-new-token","cred-new","acct-new",server.url());
+        store.write(before);
+        server.beforeRevokeReply=()->{
+            try {store.write(after);} catch(Exception e){throw new AssertionError(e);}
+        };
+        logout().execute();
+        Assert.assertNotNull("delayed logout must not delete a newer sign-in",store.read());
+        Assert.assertEquals("cred-new",store.read().credentialId);
+        Assert.assertEquals(1,server.requests("DELETE","/v1/credentials/cred1").size());
+        Assert.assertEquals(0,server.requests("DELETE","/v1/credentials/cred-new").size());
+        Assert.assertTrue(log.all().contains("new sign-in was retained"));
+    }
+
+    @Test public void refusedLogoutLockExplainsRevocationAndPreservesLinkTarget() throws Exception {
+        org.junit.Assume.assumeFalse(System.getProperty("os.name").startsWith("Windows"));
+        store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "acct-42", server.url()));
+        Path lock = store.file().resolveSibling("credentials.lock");
+        Files.deleteIfExists(lock);
+        Path target = home.resolve("untouched-lock-target");
+        Files.writeString(target, "untouched");
+        Files.createSymbolicLink(lock, target);
+        Exception failure = Assert.assertThrows(org.apache.maven.plugin.MojoExecutionException.class, () -> logout().execute());
+        Assert.assertNull("Maven must not append a raw native-error cause", failure.getCause());
+        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("Revocation was attempted"));
+        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("symbolic links"));
+        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("credentials.lock"));
+        Assert.assertEquals(1, server.requests("DELETE", "/v1/credentials/cred1").size());
+        Assert.assertTrue(Files.isSymbolicLink(lock));
+        Assert.assertEquals("untouched", Files.readString(target));
+        Assert.assertNotNull(store.read());
+    }
+
 }

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.3.5] - 2026-11-09
+
+- Restrict browser-verification trust to explicit user/CLI settings, normalize equivalent service spellings, and keep unreadable saved sign-in from blocking unchanged ensure-mode builds; strengthen origin and logout-race regression tests.
+
+- Protect shared sign-in replacement and logout with cross-process locking and compare-before-write/delete; require explicit confirmation when switching service.
+
+- Emit correlated FLUXTION-AUTH sign-in records, verify existing and newly approved accounts with the server, and reject untrusted browser verification origins.
+
+- Add a read-only `account` goal for verified build identity and allowances; refuse ambiguous execution-specific service selection before requests.
+
+
 ## [1.3.4] - 2026-11-07
 
 ### Breaking: the RapidAPI key route is retired

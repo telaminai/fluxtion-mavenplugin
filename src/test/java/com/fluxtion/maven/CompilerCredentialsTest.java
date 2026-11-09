@@ -86,6 +86,36 @@ public class CompilerCredentialsTest {
         assertNoCredentialLeft();
     }
 
+    @Test public void unreadableStoreDoesNotBlockAnUnauthenticatedEnsureBuild() throws Exception {
+        Files.createDirectories(mojo.credentialStore.file()); // directory in place of a credential
+        mojo.execute();
+        Assert.assertTrue("builder must decide whether its committed processor can be reused",Fluxtion.called);
+        Assert.assertEquals("token",Fluxtion.seenAuth);
+        Assert.assertNull(Fluxtion.seenToken);
+        Assert.assertNull(Fluxtion.seenHost);
+        Assert.assertTrue(log.all().contains("continuing without a stored credential"));
+        assertNoCredentialLeft();
+    }
+
+    @Test public void failedStoreSuppressesBuilderRereadOnlyDuringTheCall() throws Exception {
+        Files.createDirectories(mojo.credentialStore.file());
+        String[] keys={"fluxtion.credentialsFile","fluxtion.remote.token","fluxtion.api.token","fluxtion.remote.tokenIssuer"};
+        java.util.Map<String,String> original=new java.util.LinkedHashMap<>();
+        for(String key:keys)original.put(key,System.getProperty(key));
+        try {
+            for(String key:keys)System.setProperty(key,"synthetic-previous-value");
+            CompilerCredentials.Resolved resolved=CompilerCredentials.resolveForBuild(env::get,mojo.credentialStore,null,log);
+            java.util.Map<String,String> saved=CompilerCredentials.apply(resolved,log);
+            try {
+                Assert.assertTrue(Files.isDirectory(java.nio.file.Paths.get(System.getProperty(keys[0]))));
+                for(int i=1;i<keys.length;i++)Assert.assertNull(System.getProperty(keys[i]));
+            } finally {CompilerCredentials.restore(saved);}
+            for(String key:keys)Assert.assertEquals("synthetic-previous-value",System.getProperty(key));
+        } finally {
+            for(String key:keys){String value=original.get(key);if(value==null)System.clearProperty(key);else System.setProperty(key,value);}
+        }
+    }
+
     @Test
     public void aBuilderBefore1090IsToldToUpgrade_andA1090BuilderIsNot() throws Exception {
         AbstractFluxtionMojo.resetUpgradeWarningForTest();

@@ -15,25 +15,23 @@ public class FluxtionLogoutMojo extends AbstractCompilerAccountMojo {
     @Override
     public void execute() throws MojoExecutionException {
         CredentialStore store = credentialStore();
-        if (!store.exists()) {
-            getLog().info("Not signed in: no stored compiler credential at " + store.file() + ".");
-            envNote();
-            return;
-        }
-        CredentialStore.Stored stored = null;
-        try {
-            stored = store.read();
-        } catch (IOException e) {
-            getLog().warn("The stored credential could not be read (" + e.getMessage() + "); deleting it.");
-        }
+        CredentialStore.Stored stored;
+        try { stored = store.read(); }
+        catch (IOException e) { throw new MojoExecutionException("Stored sign-in could not be read; nothing deleted or revoked."); }
+        if (stored == null) { getLog().info("Not signed in: no stored compiler credential."); envNote(); return; }
         if (stored != null) {
             revoke(stored);
         }
         try {
-            store.delete();
+            if (!store.compareAndDelete(stored)) {
+                getLog().warn("Another sign-in replaced this one; the new sign-in was retained.");
+                envNote(); return;
+            }
         } catch (IOException e) {
-            throw new MojoExecutionException("Could not delete " + store.file() + " (" + e.getMessage()
-                    + "); delete it by hand.", e);
+            throw new MojoExecutionException("Revocation was attempted, but the local sign-in could not be removed from " + store.file()
+                    + ". Check this file and its " + store.file().getFileName() + ".lock sibling for symbolic links or invalid permissions. "
+                    + "Do not follow or delete a link target. Correct the local path and rerun logout; "
+                    + "the retained credential may already be revoked.");
         }
         getLog().info("Signed out: removed " + store.file() + ".");
         envNote();

@@ -43,8 +43,15 @@ final class StubCompilerServer implements AutoCloseable {
     /** Responses for successive token polls: "status body". The last one repeats. */
     final Deque<String[]> tokenReplies = new ArrayDeque<>();
     int revokeStatus = 204;
+    Runnable beforeTokenReply = () -> {};
+    Runnable beforeRevokeReply = () -> {};
+    String verificationUri = "https://login.example.com/device";
+    String verificationUriComplete = "https://login.example.com/device?user_code=WDJB-MJHT";
     /** What {@code GET /v1/usage} answers: by default a compiler from before credit kinds and plans. */
     volatile String usageBody = OLD_USAGE;
+    int usageStatus = 200;
+    int meStatus = 200;
+    String meBody = "{\"selectedAccount\":\"acct-42\"}";
 
     static final String OLD_USAGE = "{\"accountId\":\"acct-42\",\"plan\":\"free\",\"active\":true,\"available\":250,"
             + "\"reserved\":0,\"limits\":{\"a\":[1,2.5,null]}}";
@@ -99,23 +106,29 @@ final class StubCompilerServer implements AutoCloseable {
                 ex.getRequestHeaders().getFirst(CompilerAuthClient.CLIENT_HEADER), body));
         if ("POST".equals(method) && "/auth/device/authorize".equals(path)) {
             reply(ex, 200, "{\"device_code\":\"" + DEVICE_CODE + "\",\"user_code\":" + Json.quote(userCode) + ","
-                    + "\"verification_uri\":\"https://login.example.com/device\","
-                    + "\"verification_uri_complete\":\"https://login.example.com/device?user_code=WDJB-MJHT\","
+                    + "\"verification_uri\":" + Json.quote(verificationUri) + ","
+                    + "\"verification_uri_complete\":" + Json.quote(verificationUriComplete) + ","
                     + "\"expires_in\":" + expiresIn + ",\"interval\":" + interval + "}");
         } else if ("POST".equals(method) && "/auth/device/token".equals(path)) {
+            beforeTokenReply.run();
             String[] r;
             synchronized (tokenReplies) {
                 r = tokenReplies.size() > 1 ? tokenReplies.poll() : tokenReplies.peek();
             }
             if (r == null) r = new String[]{"400", "{\"error\":\"authorization_pending\"}"};
             reply(ex, Integer.parseInt(r[0]), r[1]);
+        } else if ("GET".equals(method) && "/v1/me".equals(path)) {
+            reply(ex, ("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization")) ? meStatus : 401,
+                    ("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization"))
+                    ? meBody : "{\"error\":\"AUTH_REQUIRED\"}");
         } else if ("GET".equals(method) && "/v1/usage".equals(path)) {
             if (("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization"))) {
-                reply(ex, 200, usageBody);
+                reply(ex, usageStatus, usageBody);
             } else {
                 reply(ex, 401, "{\"error\":\"AUTH_REQUIRED\",\"message\":\"sign in to continue\"}");
             }
         } else if ("DELETE".equals(method) && path.startsWith("/v1/credentials/")) {
+            beforeRevokeReply.run();
             reply(ex, revokeStatus, "");
         } else {
             reply(ex, 404, "{\"error\":\"NOT_FOUND\"}");

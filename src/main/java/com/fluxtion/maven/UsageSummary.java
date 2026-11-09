@@ -58,7 +58,8 @@ final class UsageSummary {
             if (!limits.isEmpty()) {
                 out.add("Plan limits: " + String.join(", ", limits)
                         + (map(caps.get("overrides")) != null && !map(caps.get("overrides")).isEmpty()
-                        ? " (with account overrides)." : "."));
+                        ? ("enterprise".equalsIgnoreCase(text(usage.get("plan")))
+                        ? " (with account overrides)." : " (overrides held; effective only on Enterprise).") : "."));
             }
         }
         return out;

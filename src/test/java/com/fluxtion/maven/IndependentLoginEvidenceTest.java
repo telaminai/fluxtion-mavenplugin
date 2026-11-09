@@ -13,17 +13,26 @@ public class IndependentLoginEvidenceTest {
         mojo.credentialStore = store;
         mojo.compilerUrl = server.url();
         mojo.browser = false;
+        mojo.verificationOrigin = "https://login.example.com";
         long[] now = {0};
         mojo.clockMillis = () -> now[0];
         mojo.sleeper = millis -> now[0] += millis;
         mojo.setLog(new RecordingLog());
         return mojo;
     }
+    private void blockAfterApproval(StubCompilerServer server, Path path) throws Exception {
+        Files.delete(path); Files.createDirectory(path);
+        server.beforeTokenReply = () -> {
+            try { Files.delete(path); Files.createFile(path); }
+            catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        };
+    }
     @Test public void failedRevokeMustNotBeReportedAsRevoked() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
             server.tokenReply(200, StubCompilerServer.success());
             server.revokeStatus = 500;
             Path blockingFile = Files.createTempFile("review-not-directory", ".tmp");
+            blockAfterApproval(server, blockingFile);
             CredentialStore store = new CredentialStore(blockingFile.resolve("credentials"));
             try {
                 login(server, store).execute();
@@ -57,6 +66,7 @@ public class IndependentLoginEvidenceTest {
                 server.tokenReply(200, StubCompilerServer.success());
                 server.revokeStatus = status;
                 Path blockingFile = Files.createTempFile("review-cleanup-status", ".tmp");
+                blockAfterApproval(server, blockingFile);
                 try {
                     login(server, new CredentialStore(blockingFile.resolve("credentials"))).execute();
                     fail("credential storage must fail");
