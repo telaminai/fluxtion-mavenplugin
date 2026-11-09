@@ -1,0 +1,63 @@
+# Compiler sign-in acceptance on Linux and Windows: real `mvn` login, account and logout processes against a
+# synthetic loopback service (src/test/acceptance/signin_os_acceptance.py). Manually triggered only:
+#   gh workflow run signin-os-acceptance.yml --ref <branch> -f os=both
+name: Sign-in OS acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: Operating systems to run on
+        type: choice
+        options: [both, linux, windows]
+        default: both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: signin-os-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  acceptance:
+    name: Sign-in acceptance (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os == 'linux' && '["ubuntu-latest"]' || inputs.os == 'windows' && '["windows-latest"]' || '["ubuntu-latest","windows-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build and install the plugin from this ref
+        shell: bash
+        run: mvn -B -ntp -DskipTests install
+
+      - name: Run the sign-in acceptance
+        shell: bash
+        run: >-
+          python src/test/acceptance/signin_os_acceptance.py
+          --log-dir "${RUNNER_TEMP}/signin-acceptance-logs"
+
+      - name: Upload scrubbed logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: signin-acceptance-logs-${{ matrix.os }}
+          path: ${{ runner.temp }}/signin-acceptance-logs
+          if-no-files-found: warn
+          retention-days: 7
