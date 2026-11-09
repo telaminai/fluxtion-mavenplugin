@@ -475,3 +475,7 @@ of recommending a logout that cannot read the same file. No read failure falls b
 Equivalent scheme/host case and default ports are normalized. `localhost` and `127.0.0.1` compare as one local service,
 without changing the transport hostname; IPv6 and other loopback addresses remain distinct, and no DNS lookup establishes trust.
 The trusted provider can itself redirect a browser; provider-side open-redirect prevention remains that provider's responsibility.
+
+Project `.mvn/maven.config` and `.mvn/jvm.config` must not mention the verification-origin override or use `@argfiles` during interactive login. This conservative refusal includes comments; move a trusted override to the user's command line or user JVM environment and remove the project reference. This is a configuration boundary, not a sandbox for arbitrary Maven extensions or executable JVM code.
+
+If generation cannot safely read the stored sign-in, it temporarily prevents older builders from re-reading that store or using token system properties. The properties are restored after the builder call. Unchanged ensure builds can still reuse their processor; generation requiring authentication fails signed out. Explicit account/login/logout operations still fail closed.

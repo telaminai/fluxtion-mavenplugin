@@ -65,8 +65,10 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
                 try {
                     if(java.nio.file.Files.size(path)>65536)throw new IOException("configuration too large");
                     String text=new String(java.nio.file.Files.readAllBytes(path),StandardCharsets.UTF_8);
-                    if(java.util.regex.Pattern.compile("-D\\s*fluxtion\\.login\\.verificationOrigin\\s*=").matcher(text).find())
-                        throw new MojoExecutionException("The trusted verification origin must not come from project .mvn options. "
+                    // Maven has several define spellings and JVM @argfiles can hide another definition.
+                    // Refuse conservatively, including comments, rather than reimplement either argument parser.
+                    if(text.contains("fluxtion.login.verificationOrigin")||text.contains("@"))
+                        throw new MojoExecutionException("Interactive sign-in refuses project .mvn references to the trusted verification origin or @argfiles. "
                                 + "Remove that project setting and set -Dfluxtion.login.verificationOrigin explicitly in your terminal or user JVM options. No request sent.");
                 } catch(IOException e) {
                     throw new MojoExecutionException("Could not check project Maven options for verification-origin overrides. No request sent.");

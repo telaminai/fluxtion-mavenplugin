@@ -86,8 +86,7 @@ public class OriginPolicyTest {
             Path dir=Files.createTempDirectory("project-trust");
             try {
                 Files.createDirectories(dir.resolve(".mvn"));
-                Files.write(dir.resolve(".mvn/maven.config"),java.util.Collections.singletonList(
-                        "-Dfluxtion.login.verificationOrigin=https://login.example.com"));
+
                 FluxtionLoginMojo mojo=new FluxtionLoginMojo();mojo.env=k->null;mojo.compilerUrl=server.url();
                 mojo.credentialStore=new CredentialStore(dir.resolve("credentials"));mojo.browser=false;
                 mojo.verificationOrigin="https://login.example.com";
@@ -96,8 +95,14 @@ public class OriginPolicyTest {
                 mojo.project.setFile(dir.resolve("pom.xml").toFile());
                 long[] now={0};mojo.clockMillis=()->now[0];mojo.sleeper=ms->now[0]+=ms;mojo.setLog(new RecordingLog());
                 server.tokenReply(200,StubCompilerServer.success());
-                assertThrows(MojoExecutionException.class,mojo::execute);
-                assertTrue(server.requests.isEmpty());
+                for(String option:new String[]{"-Dfluxtion.login.verificationOrigin=https://login.example.com",
+                        "--define=fluxtion.login.verificationOrigin=https://login.example.com",
+                        "--define\nfluxtion.login.verificationOrigin=https://login.example.com",
+                        "-D\nfluxtion.login.verificationOrigin=https://login.example.com", "@.mvn/trust.args"}) {
+                    Files.write(dir.resolve(".mvn/maven.config"),java.util.Collections.singletonList(option));
+                    assertThrows(MojoExecutionException.class,mojo::execute);
+                    assertTrue(server.requests.isEmpty());
+                }
             } finally {
                 try(java.util.stream.Stream<Path> paths=Files.walk(dir)){paths.sorted(java.util.Comparator.reverseOrder()).forEach(p->{try{Files.delete(p);}catch(Exception ignored){}});}
             }

@@ -35,7 +35,7 @@ env = {k: v for k, v in os.environ.items() if not k.startswith(('FLUXTION_', 'MA
 origin = 'http://127.0.0.1:' + str(server.server_port)
 settings = root / 'settings.xml'; settings.write_text('<settings/>')
 try:
-    for mode in ['pom-configuration', 'pom-property', 'project-maven-config', 'project-jvm-config', 'cli', 'jvm-user']:
+    for mode in ['pom-configuration', 'pom-property', 'project-maven-config', 'project-maven-long-equals', 'project-maven-long-separate', 'project-maven-short-separate', 'project-jvm-config', 'project-jvm-argfile', 'cli', 'jvm-user']:
         directory = root / mode; directory.mkdir(); home = directory / 'home'; home.mkdir()
         state['requests'] = []
         property_xml = '<properties><fluxtion.login.verificationOrigin>https://login.example.test</fluxtion.login.verificationOrigin></properties>' if mode == 'pom-property' else ''
@@ -52,8 +52,14 @@ try:
         run_env = dict(env)
         if mode.startswith('project-'):
             (directory / '.mvn').mkdir()
-            filename = 'maven.config' if mode == 'project-maven-config' else 'jvm.config'
-            (directory / '.mvn' / filename).write_text('-Dfluxtion.login.verificationOrigin=https://login.example.test\n')
+            filename = 'maven.config' if mode.startswith('project-maven-') else 'jvm.config'
+            setting = 'fluxtion.login.verificationOrigin=https://login.example.test'
+            option = {'project-maven-long-equals': '--define=' + setting,
+                      'project-maven-long-separate': '--define\n' + setting,
+                      'project-maven-short-separate': '-D\n' + setting,
+                      'project-jvm-argfile': '@.mvn/trust.args'}.get(mode, '-D' + setting)
+            (directory / '.mvn' / filename).write_text(option + '\n')
+            if mode == 'project-jvm-argfile': (directory / '.mvn' / 'trust.args').write_text('-D' + setting + '\n')
         if mode == 'cli': command.append('-Dfluxtion.login.verificationOrigin=https://login.example.test')
         if mode == 'jvm-user': run_env['MAVEN_OPTS'] = '-Dfluxtion.login.verificationOrigin=https://login.example.test'
         result = subprocess.run(command, cwd=directory, env=run_env, capture_output=True, text=True, timeout=45)
