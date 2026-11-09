@@ -447,7 +447,7 @@ Before printing either browser address, login checks its exact HTTPS origin agai
 A project POM cannot choose this trust root; `.mvn/maven.config` and `.mvn/jvm.config` overrides are refused.
 This is the identity provider's origin,
 not the compiler or admin website. The staging compiler has an exact operator-confirmed default. Production
-remains unconfigured and fails closed until its exact provider origin is supplied. Never derive this trusted
+is pinned to `https://restful-nature-87.authkit.app`, as confirmed by the owner. Never derive this trusted
 setting from an unverified response.
 Agents relay only the code and validated address; never read a credential file or request an API key.
 Existing released guides remain on 1.3.4 human output until this candidate has a release pin.

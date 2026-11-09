@@ -93,12 +93,19 @@ public class AuthRecordsTest {
                 "https://evil.test@login.example.com/device", "https://login.example.com/device#x", "https://login.example.com:444/device"))
             assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(uri,"https://login.example.com"));
     }
-    @Test public void stagingPinIsExactAndProductionRemainsUnconfigured() throws Exception {
+    @Test public void stagingAndProductionPinsAreExact() throws Exception {
         String staging = VerificationOrigin.trusted("https://compiler-staging.fluxtion-playground.dev", null);
         assertEquals("https://meticulous-comfort-69-staging.authkit.app", staging);
         VerificationOrigin.check(staging + "/activate?user_code=DEMO", staging);
         assertThrows(java.io.IOException.class, () -> VerificationOrigin.check("https://different.authkit.app/activate", staging));
-        assertNull(VerificationOrigin.trusted("https://compiler.fluxtion-playground.dev", null));
+        String production = VerificationOrigin.trusted("https://compiler.fluxtion-playground.dev", null);
+        assertEquals("https://restful-nature-87.authkit.app", production);
+        for (String field : Arrays.asList("/device", "/device?user_code=GOOD-1234")) {
+            VerificationOrigin.check(production + field, production);
+            assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(staging + field, production));
+            assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(production + ".evil.test" + field, production));
+        }
+        assertNull(VerificationOrigin.trusted("https://compiler.fluxtion-playground.dev.evil.test", null));
         assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(staging, null));
     }
 
