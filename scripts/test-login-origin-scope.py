@@ -43,10 +43,10 @@ try:
         (directory / 'pom.xml').write_text('<project xmlns="http://maven.apache.org/POM/4.0.0"><modelVersion>4.0.0</modelVersion>'
             '<groupId>example</groupId><artifactId>trust-fixture</artifactId><version>1</version>' + property_xml +
             '<build><plugins><plugin><groupId>com.telamin.fluxtion</groupId><artifactId>fluxtion-maven-plugin</artifactId>'
-            '<version>1.3.5-SNAPSHOT</version><configuration><compilerUrl>' + origin + '</compilerUrl>' + config +
+            '<version>1.3.5</version><configuration><compilerUrl>' + origin + '</compilerUrl>' + config +
             '</configuration></plugin></plugins></build></project>')
         command = ['mvn', '-o', '-B', '-ntp', '-s', str(settings), '-gs', str(settings),
-                   'com.telamin.fluxtion:fluxtion-maven-plugin:1.3.5-SNAPSHOT:login',
+                   'com.telamin.fluxtion:fluxtion-maven-plugin:1.3.5:login',
                    '-Dfluxtion.credentialsFile=' + str(home / '.fluxtion' / 'credentials'),
                    '-Dfluxtion.login.browser=false']
         run_env = dict(env)

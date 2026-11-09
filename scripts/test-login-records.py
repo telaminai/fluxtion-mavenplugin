@@ -22,7 +22,7 @@ settings=root/'settings.xml';settings.write_text('<settings/>')
 try:
  for mode in ['approved','access_denied','expired_token']:
   state.update(mode=mode,polls=0);output_seen.clear();credential=root/mode/'credentials';credential.parent.mkdir()
-  cmd=['mvn','-o','-B','-ntp','-s',str(settings),'-gs',str(settings),'com.telamin.fluxtion:fluxtion-maven-plugin:1.3.5-SNAPSHOT:login','-Dfluxtion.compilerUrl=http://127.0.0.1:'+str(server.server_port),'-Dfluxtion.credentialsFile='+str(credential),'-Dfluxtion.login.browser=false','-Dfluxtion.login.verificationOrigin=https://login.example.test']
+  cmd=['mvn','-o','-B','-ntp','-s',str(settings),'-gs',str(settings),'com.telamin.fluxtion:fluxtion-maven-plugin:1.3.5:login','-Dfluxtion.compilerUrl=http://127.0.0.1:'+str(server.server_port),'-Dfluxtion.credentialsFile='+str(credential),'-Dfluxtion.login.browser=false','-Dfluxtion.login.verificationOrigin=https://login.example.test']
   process=subprocess.Popen(cmd,cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
   lines=[]
   def collect():
