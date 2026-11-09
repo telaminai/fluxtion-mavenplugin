@@ -53,7 +53,13 @@ abstract class AbstractCompilerAccountMojo extends AbstractMojo {
     }
 
     private void checkUrl(String value, String configured) throws MojoExecutionException {
-        if (value != null && !value.trim().isEmpty() && !value.trim().equals(configured))
+        if (value == null || value.trim().isEmpty()) return;
+        boolean same=value.trim().equals(configured);
+        if (!same && configured!=null) {
+            try {same=CompilerUrl.parse(value).sameOrigin(CompilerUrl.parse(configured));}
+            catch(IllegalArgumentException ignored) { }
+        }
+        if (!same)
             throw new MojoExecutionException("The selected reactor configures a different compiler service. "
                     + "Run this goal with -Dfluxtion.compilerUrl=<the build's service URL>. No request sent.");
     }

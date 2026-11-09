@@ -45,7 +45,7 @@ public class CompilerCredentialsTest {
         when(build.getSourceDirectory()).thenReturn(new File(baseDir, "src/main/java").getAbsolutePath());
         when(project.getCompileClasspathElements()).thenReturn(Collections.emptyList());
 
-        home = Files.createTempDirectory("fluxtion-auth-test").toRealPath();
+        home = Files.createTempDirectory("fluxtion-auth-test");
         mojo = new FluxtionScanToGenMojo();
         mojo.project = project;
         mojo.env = env::get;
@@ -83,6 +83,17 @@ public class CompilerCredentialsTest {
         Assert.assertNull(Fluxtion.seenHost);
         Assert.assertNull(Fluxtion.seenPort);
         Assert.assertTrue(log.all(), log.all().contains("no sign-in"));
+        assertNoCredentialLeft();
+    }
+
+    @Test public void unreadableStoreDoesNotBlockAnUnauthenticatedEnsureBuild() throws Exception {
+        Files.createDirectories(mojo.credentialStore.file()); // directory in place of a credential
+        mojo.execute();
+        Assert.assertTrue("builder must decide whether its committed processor can be reused",Fluxtion.called);
+        Assert.assertEquals("token",Fluxtion.seenAuth);
+        Assert.assertNull(Fluxtion.seenToken);
+        Assert.assertNull(Fluxtion.seenHost);
+        Assert.assertTrue(log.all().contains("continuing without a stored credential"));
         assertNoCredentialLeft();
     }
 

@@ -1,7 +1,7 @@
 import os,json,subprocess,tempfile,threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-root=Path(tempfile.mkdtemp(prefix='agent-login-records-')).resolve();state={'mode':'approved','polls':0}; output_seen=threading.Event()
+root=Path(tempfile.mkdtemp(prefix='agent-login-records-'));state={'mode':'approved','polls':0}; output_seen=threading.Event()
 class Fixture(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def reply(self,status,data):
@@ -16,12 +16,13 @@ class Fixture(BaseHTTPRequestHandler):
  def do_GET(self):
   assert self.path in ['/v1/me','/v1/usage']; self.reply(200,{'selectedAccount':'acct-demo'} if self.path=='/v1/me' else {'accountId':'acct-demo','plan':'free','available':5})
 server=ThreadingHTTPServer(('127.0.0.1',0),Fixture);threading.Thread(target=server.serve_forever,daemon=True).start()
-env={k:v for k,v in os.environ.items() if not k.startswith(('FLUXTION_','MAVEN_','JAVA_TOOL_OPTIONS','_JAVA_OPTIONS')) and k not in ['CI','JENKINS_URL','TF_BUILD','TEAMCITY_VERSION','CODEBUILD_BUILD_ID','BUILDKITE','GITHUB_ACTIONS','GITLAB_CI','BITBUCKET_BUILD_NUMBER']}
+env={k:v for k,v in os.environ.items() if not k.startswith(('FLUXTION_','MAVEN_','JAVA_TOOL_OPTIONS','_JAVA_OPTIONS','JDK_JAVA_OPTIONS')) and k not in ['CI','JENKINS_URL','TF_BUILD','TEAMCITY_VERSION','CODEBUILD_BUILD_ID','BUILDKITE','GITHUB_ACTIONS','GITLAB_CI','BITBUCKET_BUILD_NUMBER']}
 env['JAVA_HOME']=os.environ['JAVA_HOME']
+settings=root/'settings.xml';settings.write_text('<settings/>')
 try:
  for mode in ['approved','access_denied','expired_token']:
   state.update(mode=mode,polls=0);output_seen.clear();credential=root/mode/'credentials';credential.parent.mkdir()
-  cmd=['mvn','-o','-B','-ntp','com.telamin.fluxtion:fluxtion-maven-plugin:1.3.5-SNAPSHOT:login','-Dfluxtion.compilerUrl=http://127.0.0.1:'+str(server.server_port),'-Dfluxtion.credentialsFile='+str(credential),'-Dfluxtion.login.browser=false','-Dfluxtion.login.verificationOrigin=https://login.example.test']
+  cmd=['mvn','-o','-B','-ntp','-s',str(settings),'-gs',str(settings),'com.telamin.fluxtion:fluxtion-maven-plugin:1.3.5-SNAPSHOT:login','-Dfluxtion.compilerUrl=http://127.0.0.1:'+str(server.server_port),'-Dfluxtion.credentialsFile='+str(credential),'-Dfluxtion.login.browser=false','-Dfluxtion.login.verificationOrigin=https://login.example.test']
   process=subprocess.Popen(cmd,cwd=root,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
   lines=[]
   def collect():

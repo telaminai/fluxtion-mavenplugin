@@ -40,8 +40,41 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
     @Parameter(property = "fluxtion.login.force", defaultValue = "false")
     protected boolean force;
 
-    @Parameter(property = "fluxtion.login.verificationOrigin")
+    /** Test injection only. Maven trusts only session user/JVM properties, never this POM-configurable field. */
     protected String verificationOrigin;
+
+    private String trustedOriginOverride() throws MojoExecutionException {
+        refuseProjectTrustOptions();
+        if(session==null)return verificationOrigin; // direct unit invocation, not a Maven execution
+        String user=session.getUserProperties().getProperty("fluxtion.login.verificationOrigin");
+        if(user!=null&&!user.trim().isEmpty())return user;
+        return session.getSystemProperties().getProperty("fluxtion.login.verificationOrigin");
+    }
+
+    private void refuseProjectTrustOptions() throws MojoExecutionException {
+        java.io.File base=project==null?null:project.getBasedir();
+        if(base==null&&session!=null&&session.getRequest().getBaseDirectory()!=null)
+            base=new java.io.File(session.getRequest().getBaseDirectory());
+        if(base==null)return;
+        for(java.nio.file.Path directory=base.toPath().toAbsolutePath();directory!=null;directory=directory.getParent()) {
+            java.nio.file.Path mvn=directory.resolve(".mvn");
+            if(!java.nio.file.Files.isDirectory(mvn))continue;
+            for(String name:new String[]{"maven.config","jvm.config"}) {
+                java.nio.file.Path path=mvn.resolve(name);
+                if(!java.nio.file.Files.exists(path))continue;
+                try {
+                    if(java.nio.file.Files.size(path)>65536)throw new IOException("configuration too large");
+                    String text=new String(java.nio.file.Files.readAllBytes(path),StandardCharsets.UTF_8);
+                    if(java.util.regex.Pattern.compile("-D\\s*fluxtion\\.login\\.verificationOrigin\\s*=").matcher(text).find())
+                        throw new MojoExecutionException("The trusted verification origin must not come from project .mvn options. "
+                                + "Remove that project setting and set -Dfluxtion.login.verificationOrigin explicitly in your terminal or user JVM options. No request sent.");
+                } catch(IOException e) {
+                    throw new MojoExecutionException("Could not check project Maven options for verification-origin overrides. No request sent.");
+                }
+            }
+            return;
+        }
+    }
 
     @Parameter(property = "fluxtion.login.replaceService", defaultValue = "false")
     protected boolean replaceService;
@@ -116,7 +149,7 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
             }
         }
 
-        String trustedVerificationOrigin = VerificationOrigin.trusted(url.toString(), verificationOrigin);
+        String trustedVerificationOrigin = VerificationOrigin.trusted(url.toString(), trustedOriginOverride());
         CompilerAuthClient.DeviceAuthorization auth;
         try {
             auth = client.authorize();

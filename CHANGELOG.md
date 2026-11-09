@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Restrict browser-verification trust to explicit user/CLI settings, normalize equivalent service spellings, and keep unreadable saved sign-in from blocking unchanged ensure-mode builds; strengthen origin and logout-race regression tests.
+
 - Protect shared sign-in replacement and logout with cross-process locking and compare-before-write/delete; require explicit confirmation when switching service.
 
 - Emit correlated FLUXTION-AUTH sign-in records, verify existing and newly approved accounts with the server, and reject untrusted browser verification origins.

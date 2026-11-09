@@ -11,7 +11,7 @@ import java.util.Map;
 public class FluxtionAccountMojoTest {
     @Test public void environmentWinsAndAccountComesFromServerNotSavedMetadata() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").resolve("credentials");
             CredentialStore store = new CredentialStore(file);
             store.write(new CredentialStore.Stored("bad-saved-token", "old", "wrong-account", server.url()));
             RecordingLog log = new RecordingLog();
@@ -32,7 +32,7 @@ public class FluxtionAccountMojoTest {
     }
     @Test public void storedLoginWorksAndMissingUsageScopeRetainsVerifiedIdentity() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").resolve("credentials");
             CredentialStore store = new CredentialStore(file);
             store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "stale-account", server.url()));
             RecordingLog log = new RecordingLog();
@@ -48,7 +48,7 @@ public class FluxtionAccountMojoTest {
     }
     @Test public void signedOutMakesNoRequestsAndRevokedCredentialIsNotAnAccount() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").resolve("credentials");
             CredentialStore store = new CredentialStore(file); RecordingLog log = new RecordingLog();
             FluxtionAccountMojo m = mojo(server, store, log);
             Assert.assertThrows(MojoExecutionException.class, m::execute);
@@ -62,7 +62,7 @@ public class FluxtionAccountMojoTest {
     }
     @Test public void mismatchedUsageIsNotPrintedAndSessionModeDoesNotQueryTokenAccount() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").resolve("credentials");
             CredentialStore store = new CredentialStore(file);
             store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "acct-42", server.url()));
             RecordingLog log = new RecordingLog(); FluxtionAccountMojo m = mojo(server, store, log);

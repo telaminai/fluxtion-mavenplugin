@@ -179,6 +179,17 @@ final class CompilerCredentials {
     /** Applies the precedence: environment, then the stored file, then none. */
     static Resolved resolve(Function<String, String> env, CredentialStore store, String configuredUrl, Log log)
             throws MojoExecutionException {
+        return resolve(env,store,configuredUrl,log,false);
+    }
+
+    /** A read failure must not prevent the builder deciding whether an unchanged processor can be reused. */
+    static Resolved resolveForBuild(Function<String,String> env, CredentialStore store, String configuredUrl, Log log)
+            throws MojoExecutionException {
+        return resolve(env,store,configuredUrl,log,true);
+    }
+
+    private static Resolved resolve(Function<String,String> env, CredentialStore store, String configuredUrl, Log log,
+                                    boolean build) throws MojoExecutionException {
         // the URL is parsed only when a credential will be sent: a build with no credential behaves exactly as before
         // this plugin knew about compiler accounts, whatever FLUXTION_COMPILER_URL happens to hold
         String envToken = env.apply(ENV_TOKEN);
@@ -190,9 +201,15 @@ final class CompilerCredentials {
         CredentialStore.Stored stored;
         try {
             stored = store.read();
-        } catch (IOException e) {
-            throw new MojoExecutionException("Could not read the stored compiler credential at " + store.file()
-                    + " (" + e.getMessage() + "). Run mvn fluxtion:logout and sign in again.", e);
+        } catch (IOException | LinkageError e) {
+            if(build) {
+                log.warn("Compiler sign-in could not be read; continuing without a stored credential. "
+                        + "An unchanged committed processor can be reused; generation still requires sign-in. "
+                        + "Check the credential path, permissions and native filesystem support.");
+                return new Resolved(Source.NONE,null,null);
+            }
+            throw new MojoExecutionException("Could not read the stored compiler sign-in. "
+                    + "Check the credential path, permissions and native filesystem support. Nothing changed; no request sent.");
         }
         if (stored != null) {
             if (store.tooOpen()) {

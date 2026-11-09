@@ -30,7 +30,7 @@ final class CompilerUrl {
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("compiler URL is not a valid URL: " + text.trim());
         }
-        String scheme = u.getScheme() == null ? null : u.getScheme().toLowerCase();
+        String scheme = u.getScheme() == null ? null : u.getScheme().toLowerCase(java.util.Locale.ROOT);
         if (!"https".equals(scheme) && !"http".equals(scheme)) {
             throw new IllegalArgumentException("compiler URL must start with https:// : " + text.trim());
         }
@@ -54,6 +54,7 @@ final class CompilerUrl {
             throw new IllegalArgumentException("compiler URL must use https:// (plain http is only allowed for"
                     + " localhost): " + text.trim());
         }
+        host = host.toLowerCase(java.util.Locale.ROOT);
         int port = u.getPort() > 0 ? u.getPort() : ("https".equals(scheme) ? 443 : 80);
         return new CompilerUrl(scheme, host, port);
     }
@@ -72,7 +73,12 @@ final class CompilerUrl {
 
     /** True when both name the same origin (scheme, host, port); host compared without case. */
     boolean sameOrigin(CompilerUrl other) {
-        return other != null && scheme.equals(other.scheme) && host.equalsIgnoreCase(other.host) && port == other.port;
+        return other != null && scheme.equals(other.scheme) && comparisonHost(host).equals(comparisonHost(other.host)) && port == other.port;
+    }
+
+    private static String comparisonHost(String host) {
+        // Local developer endpoints have these two established spellings. Do not resolve DNS or conflate IPv6.
+        return "localhost".equals(host) ? "127.0.0.1" : host;
     }
 
     /** The value for the builder's {@code fluxtion.remote.host}: scheme and host, no port, no path. */

@@ -26,7 +26,7 @@ public class LoginLogoutMojoTest {
     @Before
     public void setUp() throws Exception {
         server = new StubCompilerServer();
-        home = Files.createTempDirectory("fluxtion-login-test").toRealPath();
+        home = Files.createTempDirectory("fluxtion-login-test");
         store = new CredentialStore(home.resolve(".fluxtion/credentials"));
         log = new RecordingLog();
     }
@@ -210,4 +210,19 @@ public class LoginLogoutMojoTest {
         Assert.assertTrue(text.contains("token="));
         Assert.assertTrue(text.contains("Do not commit"));
     }
+    @Test public void logoutRacingAReplacementRetainsTheNewCredential() throws Exception {
+        CredentialStore.Stored before=new CredentialStore.Stored(StubCompilerServer.TOKEN,"cred1","acct-42",server.url());
+        CredentialStore.Stored after=new CredentialStore.Stored("synthetic-new-token","cred-new","acct-new",server.url());
+        store.write(before);
+        server.beforeRevokeReply=()->{
+            try {store.write(after);} catch(Exception e){throw new AssertionError(e);}
+        };
+        logout().execute();
+        Assert.assertNotNull("delayed logout must not delete a newer sign-in",store.read());
+        Assert.assertEquals("cred-new",store.read().credentialId);
+        Assert.assertEquals(1,server.requests("DELETE","/v1/credentials/cred1").size());
+        Assert.assertEquals(0,server.requests("DELETE","/v1/credentials/cred-new").size());
+        Assert.assertTrue(log.all().contains("new sign-in was retained"));
+    }
+
 }

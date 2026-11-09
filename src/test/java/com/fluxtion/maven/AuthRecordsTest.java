@@ -23,7 +23,7 @@ public class AuthRecordsTest {
     }
     @Test public void pendingAndVerifiedTerminalShareAttemptAndAlreadySignedInIsVerified() throws Exception {
         try (StubCompilerServer s = new StubCompilerServer()) {
-            Path dir = Files.createTempDirectory("auth-records").toRealPath();
+            Path dir = Files.createTempDirectory("auth-records");
             CredentialStore store = new CredentialStore(dir.resolve("credentials"));
             RecordingLog log = new RecordingLog(); FluxtionLoginMojo m = mojo(s,store,log);
             s.tokenReply(200,StubCompilerServer.success()); m.execute();
@@ -47,7 +47,7 @@ public class AuthRecordsTest {
     @Test public void deniedExpiredAndCancelledHaveCorrelatedTerminalRecords() throws Exception {
         for (String outcome : Arrays.asList("denied","expired","cancelled")) {
             try (StubCompilerServer s = new StubCompilerServer()) {
-                Path dir = Files.createTempDirectory("auth-outcome").toRealPath();
+                Path dir = Files.createTempDirectory("auth-outcome");
                 CredentialStore store = new CredentialStore(dir.resolve("credentials"));
                 RecordingLog log = new RecordingLog(); FluxtionLoginMojo m = mojo(s,store,log);
                 if (outcome.equals("cancelled")) m.sleeper = ms -> { throw new InterruptedException(); };
@@ -63,7 +63,7 @@ public class AuthRecordsTest {
     }
     @Test public void envOverrideAndUntrustedOriginNeverStartPolling() throws Exception {
         try (StubCompilerServer s = new StubCompilerServer()) {
-            Path dir = Files.createTempDirectory("auth-refusal").toRealPath();
+            Path dir = Files.createTempDirectory("auth-refusal");
             CredentialStore store = new CredentialStore(dir.resolve("credentials"));
             RecordingLog log = new RecordingLog(); FluxtionLoginMojo m = mojo(s,store,log);
             m.env = k -> k.equals("FLUXTION_API_TOKEN") ? StubCompilerServer.TOKEN : null;
@@ -100,6 +100,26 @@ public class AuthRecordsTest {
         assertThrows(java.io.IOException.class, () -> VerificationOrigin.check("https://different.authkit.app/activate", staging));
         assertNull(VerificationOrigin.trusted("https://compiler.fluxtion-playground.dev", null));
         assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(staging, null));
+    }
+
+    @Test public void untrustedCompleteAddressIsNeverPublishedOrPolled() throws Exception {
+        try (StubCompilerServer s = new StubCompilerServer()) {
+            Path dir=Files.createTempDirectory("complete-origin");
+            try {
+                CredentialStore store=new CredentialStore(dir.resolve("credentials"));
+                RecordingLog log=new RecordingLog(); FluxtionLoginMojo m=mojo(s,store,log);
+                s.verificationUriComplete="https://attacker.example/device?user_code=DEMO";
+                s.tokenReply(200,StubCompilerServer.success());
+                assertThrows(org.apache.maven.plugin.MojoExecutionException.class,m::execute);
+                assertEquals(0,s.requests("POST","/auth/device/token").size());
+                assertFalse(log.all().contains("attacker.example"));
+                assertFalse(log.all().contains(s.userCode));
+                assertFalse(log.all().contains("\"event\":\"pending\""));
+                assertFalse(Files.exists(store.file()));
+            } finally {
+                try(java.util.stream.Stream<Path> paths=Files.walk(dir)){paths.sorted(java.util.Comparator.reverseOrder()).forEach(p->{try{Files.delete(p);}catch(Exception ignored){}});}
+            }
+        }
     }
 
 }

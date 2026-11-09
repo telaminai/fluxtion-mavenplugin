@@ -44,6 +44,9 @@ final class StubCompilerServer implements AutoCloseable {
     final Deque<String[]> tokenReplies = new ArrayDeque<>();
     int revokeStatus = 204;
     Runnable beforeTokenReply = () -> {};
+    Runnable beforeRevokeReply = () -> {};
+    String verificationUri = "https://login.example.com/device";
+    String verificationUriComplete = "https://login.example.com/device?user_code=WDJB-MJHT";
     /** What {@code GET /v1/usage} answers: by default a compiler from before credit kinds and plans. */
     volatile String usageBody = OLD_USAGE;
     int usageStatus = 200;
@@ -103,8 +106,8 @@ final class StubCompilerServer implements AutoCloseable {
                 ex.getRequestHeaders().getFirst(CompilerAuthClient.CLIENT_HEADER), body));
         if ("POST".equals(method) && "/auth/device/authorize".equals(path)) {
             reply(ex, 200, "{\"device_code\":\"" + DEVICE_CODE + "\",\"user_code\":" + Json.quote(userCode) + ","
-                    + "\"verification_uri\":\"https://login.example.com/device\","
-                    + "\"verification_uri_complete\":\"https://login.example.com/device?user_code=WDJB-MJHT\","
+                    + "\"verification_uri\":" + Json.quote(verificationUri) + ","
+                    + "\"verification_uri_complete\":" + Json.quote(verificationUriComplete) + ","
                     + "\"expires_in\":" + expiresIn + ",\"interval\":" + interval + "}");
         } else if ("POST".equals(method) && "/auth/device/token".equals(path)) {
             beforeTokenReply.run();
@@ -125,6 +128,7 @@ final class StubCompilerServer implements AutoCloseable {
                 reply(ex, 401, "{\"error\":\"AUTH_REQUIRED\",\"message\":\"sign in to continue\"}");
             }
         } else if ("DELETE".equals(method) && path.startsWith("/v1/credentials/")) {
+            beforeRevokeReply.run();
             reply(ex, revokeStatus, "");
         } else {
             reply(ex, 404, "{\"error\":\"NOT_FOUND\"}");

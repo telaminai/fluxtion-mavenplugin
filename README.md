@@ -443,7 +443,9 @@ credential; `-Dfluxtion.login.force=true` requests a fresh approval. An outage l
 An environment token overrides saved sign-in: login refuses to change it and directs the user to `account`.
 
 Before printing either browser address, login checks its exact HTTPS origin against
-`-Dfluxtion.login.verificationOrigin=https://<trusted-provider-host>`. This is the identity provider's origin,
+`-Dfluxtion.login.verificationOrigin=https://<trusted-provider-host>`, supplied explicitly in your terminal or user JVM options.
+A project POM cannot choose this trust root; `.mvn/maven.config` and `.mvn/jvm.config` overrides are refused.
+This is the identity provider's origin,
 not the compiler or admin website. The staging compiler has an exact operator-confirmed default. Production
 remains unconfigured and fails closed until its exact provider origin is supplied. Never derive this trusted
 setting from an unverified response.
@@ -454,11 +456,22 @@ Existing released guides remain on 1.3.4 human output until this candidate has a
 
 The candidate Analyser and Maven share the existing properties-format credential file. New writers use a persistent
 `credentials.lock`, owner-only atomic writes, and compare-before-replace/delete. A delayed logout cannot delete a
-newer sign-in. Paths containing symlinks, including parent links, are refused. Old clients do not use this lock;
-upgrade them before relying on concurrent-write protection. The Analyser offers an explicit, verified migration
+newer sign-in. The home prefix (or an explicit file override's existing parent prefix) is resolved once; links in the
+store-owned directory and its credential, lock or temporary files are refused. Old clients do not use this lock;
+upgrade them before relying on concurrent-write protection. Released plugin 1.3.4 also replaces a different service's
+sign-in without a confirmation flag: obtain the user's confirmation before using its login command to switch services.
+The Analyser offers an explicit, verified migration
 from its former OS store; neither client silently falls back to that old copy.
 
 To switch compiler service, select `-Dfluxtion.compilerUrl=...` and explicitly confirm
 `-Dfluxtion.login.replaceService=true`. Successful approval replaces the machine sign-in and attempts to revoke the
 previous credential at its original issuer. Failed approval leaves the old sign-in intact. Revocation warnings mean
 support or the user should check that account's devices. `logout` never removes an environment token.
+
+A generation goal whose saved sign-in cannot be read (including unavailable native file support) warns and gives the
+builder no stored credential. This permits unchanged ensure-mode processors to be reused; generation remains subject
+to the builder's normal sign-in refusal. The explicit `account` goal fails closed with path/permission guidance instead
+of recommending a logout that cannot read the same file. No read failure falls back to a legacy key or another service.
+Equivalent scheme/host case and default ports are normalized. `localhost` and `127.0.0.1` compare as one local service,
+without changing the transport hostname; IPv6 and other loopback addresses remain distinct, and no DNS lookup establishes trust.
+The trusted provider can itself redirect a browser; provider-side open-redirect prevention remains that provider's responsibility.

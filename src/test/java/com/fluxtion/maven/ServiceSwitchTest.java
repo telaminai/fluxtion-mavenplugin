@@ -5,7 +5,7 @@ import static org.junit.Assert.*;
 public class ServiceSwitchTest {
     @Test public void switchingRequiresConfirmationAndRevokesOnlyAfterSuccessfulSave() throws Exception {
         try (StubCompilerServer old = new StubCompilerServer(); StubCompilerServer next = new StubCompilerServer()) {
-            Path dir=Files.createTempDirectory("service-switch").toRealPath(); CredentialStore store=new CredentialStore(dir.resolve("credentials"));
+            Path dir=Files.createTempDirectory("service-switch"); CredentialStore store=new CredentialStore(dir.resolve("credentials"));
             store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN,"cred1","acct-42",old.url()));
             FluxtionLoginMojo m=new FluxtionLoginMojo(); m.env=k->null; m.compilerUrl=next.url(); m.credentialStore=store;
             m.verificationOrigin="https://login.example.com"; m.browser=false; m.setLog(new RecordingLog());
