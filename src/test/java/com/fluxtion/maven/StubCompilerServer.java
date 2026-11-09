@@ -45,6 +45,7 @@ final class StubCompilerServer implements AutoCloseable {
     int revokeStatus = 204;
     /** What {@code GET /v1/usage} answers: by default a compiler from before credit kinds and plans. */
     volatile String usageBody = OLD_USAGE;
+    int usageStatus = 200;
 
     static final String OLD_USAGE = "{\"accountId\":\"acct-42\",\"plan\":\"free\",\"active\":true,\"available\":250,"
             + "\"reserved\":0,\"limits\":{\"a\":[1,2.5,null]}}";
@@ -109,9 +110,13 @@ final class StubCompilerServer implements AutoCloseable {
             }
             if (r == null) r = new String[]{"400", "{\"error\":\"authorization_pending\"}"};
             reply(ex, Integer.parseInt(r[0]), r[1]);
+        } else if ("GET".equals(method) && "/v1/me".equals(path)) {
+            reply(ex, ("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization")) ? 200 : 401,
+                    ("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization"))
+                    ? "{\"selectedAccount\":\"acct-42\"}" : "{\"error\":\"AUTH_REQUIRED\"}");
         } else if ("GET".equals(method) && "/v1/usage".equals(path)) {
             if (("Bearer " + TOKEN).equals(ex.getRequestHeaders().getFirst("Authorization"))) {
-                reply(ex, 200, usageBody);
+                reply(ex, usageStatus, usageBody);
             } else {
                 reply(ex, 401, "{\"error\":\"AUTH_REQUIRED\",\"message\":\"sign in to continue\"}");
             }

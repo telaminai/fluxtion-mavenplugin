@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Add a read-only `account` goal for verified build identity and allowances; refuse ambiguous execution-specific service selection before requests.
+
+
 ## [1.3.4] - 2026-11-07
 
 ### Breaking: the RapidAPI key route is retired

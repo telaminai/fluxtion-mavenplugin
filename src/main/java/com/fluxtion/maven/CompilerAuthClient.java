@@ -212,6 +212,13 @@ final class CompilerAuthClient {
         }
     }
 
+    /** Identity of this exact bearer; no email requested or credential echoed. */
+    Map<String, Object> me(String token) throws IOException {
+        Response r = send("GET", "/v1/me", null, token);
+        if (r.status != 200) throw new IOException("account unavailable: " + describe(r));
+        return parse(r);
+    }
+
     /** {@code GET /v1/usage}: the account's plan and allowance, as returned. */
     Map<String, Object> usage(String token) throws IOException {
         Response r = send("GET", "/v1/usage", null, token);

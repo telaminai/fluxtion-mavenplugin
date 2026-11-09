@@ -404,3 +404,31 @@ mvn compile -DskipFluxtion
 
 
 
+
+## Diagnose a compiler plan refusal
+
+With a plugin build containing the `account` goal, run `mvn fluxtion:account` in the same project and environment
+as the failed build. Outside a configured project, use the fully qualified goal with that plugin version:
+`mvn com.telamin.fluxtion:fluxtion-maven-plugin:<version>:account`.
+This new goal is not in released 1.3.4. It reads identity and usage; it does not generate or change the account.
+
+The output names the compiler service, credential source, server-confirmed account ID and effective limits.
+`FLUXTION_API_TOKEN` takes precedence over saved Maven sign-in, just as in the build. Use the same
+`-Dfluxtion.compilerUrl=...` setting if you configured one. The command never prints the token. A missing usage
+scope can prevent reading limits even when identity was verified. A failed diagnostic exits nonzero.
+
+For support, copy the failed build's `accountId`, request ID (`fx-...`), compiler version, service, and refusal
+(for example requested inputs versus allowed inputs). The request ID appears beside the HTTP status; newer
+services also include it in the JSON body, and HTTP clients receive `X-Fluxtion-Request-Id`. Do not send credential
+files or tokens. If an older service omits the account ID, use this goal without changing sign-in first.
+
+The Analyser's **Compiler account → Copy details** describes its own connection. It can use a different account
+from Maven or CI; it is not proof of the account that compiled your application. An input limit counts distinct
+event types plus exported service methods, not processed records. Support can investigate the account/request
+pair and review an entitlement; repeatedly compiling or buying compile credits does not raise a graph-size limit.
+After support confirms the effective limit, rerun your original authoring command and check its fresh evidence.
+
+The `account` goal runs once per reactor. If a POM execution configures a different compiler URL,
+it stops before credential resolution or any request. Repeat with explicit
+`-Dfluxtion.compilerUrl=<the build's service URL>` to select the intended service.
+The diagnostics candidate uses `1.3.5-SNAPSHOT`; do not install it as released `1.3.4`.

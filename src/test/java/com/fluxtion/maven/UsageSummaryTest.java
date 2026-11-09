@@ -49,7 +49,7 @@ public class UsageSummaryTest {
                 + "\"targets\":[\"java\",\"cpp\"],\"overrides\":{\"maxNodes\":\"1000\"}}}"));
         Assert.assertEquals("Plan: Pro; compile credits available: 900; interpret credits available: 0.", lines.get(0));
         Assert.assertEquals("Plan limits: 1000 nodes, 60 inputs (event types + exported methods), 10 exported interfaces,"
-                + " targets Java, C++ (with account overrides).",
+                + " targets Java, C++ (overrides held; effective only on Enterprise).",
                 lines.get(1));
     }
 
