@@ -42,6 +42,6 @@ public final class FluxtionAccountMojo extends AbstractCompilerAccountMojo {
             throw new MojoExecutionException("Compiler account identified; effective limits could not be verified.");
         }
         getLog().info("For a refused build, share its accountId and request ID from the failure message with support."
-                + " This is a current account snapshot, not a generation attempt. The Analyser has a separate sign-in.");
+                + " This is a current account snapshot, not a generation attempt. The shared sign-in can still be overridden by build properties or the environment.");
     }
 }

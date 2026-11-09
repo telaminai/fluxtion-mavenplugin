@@ -23,7 +23,7 @@ public class AuthRecordsTest {
     }
     @Test public void pendingAndVerifiedTerminalShareAttemptAndAlreadySignedInIsVerified() throws Exception {
         try (StubCompilerServer s = new StubCompilerServer()) {
-            Path dir = Files.createTempDirectory("auth-records");
+            Path dir = Files.createTempDirectory("auth-records").toRealPath();
             CredentialStore store = new CredentialStore(dir.resolve("credentials"));
             RecordingLog log = new RecordingLog(); FluxtionLoginMojo m = mojo(s,store,log);
             s.tokenReply(200,StubCompilerServer.success()); m.execute();
@@ -41,13 +41,13 @@ public class AuthRecordsTest {
             assertThrows(org.apache.maven.plugin.MojoExecutionException.class,m::execute);
             assertEquals("unknown",records(log).get(0).get("identityStatus"));
             assertEquals(authorize,s.requests("POST","/auth/device/authorize").size());
-            Files.delete(store.file()); Files.delete(dir);
+            Files.delete(store.file()); Files.deleteIfExists(dir.resolve("credentials.lock")); Files.deleteIfExists(dir.resolve("credential.lock")); Files.delete(dir);
         }
     }
     @Test public void deniedExpiredAndCancelledHaveCorrelatedTerminalRecords() throws Exception {
         for (String outcome : Arrays.asList("denied","expired","cancelled")) {
             try (StubCompilerServer s = new StubCompilerServer()) {
-                Path dir = Files.createTempDirectory("auth-outcome");
+                Path dir = Files.createTempDirectory("auth-outcome").toRealPath();
                 CredentialStore store = new CredentialStore(dir.resolve("credentials"));
                 RecordingLog log = new RecordingLog(); FluxtionLoginMojo m = mojo(s,store,log);
                 if (outcome.equals("cancelled")) m.sleeper = ms -> { throw new InterruptedException(); };
@@ -57,13 +57,13 @@ public class AuthRecordsTest {
                 List<Map<String,Object>> r = records(log);
                 assertEquals(2,r.size()); assertEquals(outcome,r.get(1).get("event"));
                 assertEquals(r.get(0).get("attemptId"),r.get(1).get("attemptId"));
-                assertFalse(store.exists()); Files.delete(dir);
+                assertFalse(store.exists()); Files.deleteIfExists(dir.resolve("credentials.lock")); Files.deleteIfExists(dir.resolve("credential.lock")); Files.delete(dir);
             }
         }
     }
     @Test public void envOverrideAndUntrustedOriginNeverStartPolling() throws Exception {
         try (StubCompilerServer s = new StubCompilerServer()) {
-            Path dir = Files.createTempDirectory("auth-refusal");
+            Path dir = Files.createTempDirectory("auth-refusal").toRealPath();
             CredentialStore store = new CredentialStore(dir.resolve("credentials"));
             RecordingLog log = new RecordingLog(); FluxtionLoginMojo m = mojo(s,store,log);
             m.env = k -> k.equals("FLUXTION_API_TOKEN") ? StubCompilerServer.TOKEN : null;
@@ -73,7 +73,7 @@ public class AuthRecordsTest {
             assertThrows(org.apache.maven.plugin.MojoExecutionException.class,m::execute);
             assertEquals("service_error",records(log).get(0).get("event"));
             assertFalse(log.all().contains(s.userCode)); assertEquals(0,s.requests("POST","/auth/device/token").size());
-            Files.delete(dir);
+            Files.deleteIfExists(dir.resolve("credentials.lock")); Files.deleteIfExists(dir.resolve("credential.lock")); Files.delete(dir);
         }
     }
     @Test public void oversizedPollIntervalCannotOutliveExpiry() throws Exception {
@@ -93,4 +93,13 @@ public class AuthRecordsTest {
                 "https://evil.test@login.example.com/device", "https://login.example.com/device#x", "https://login.example.com:444/device"))
             assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(uri,"https://login.example.com"));
     }
+    @Test public void stagingPinIsExactAndProductionRemainsUnconfigured() throws Exception {
+        String staging = VerificationOrigin.trusted("https://compiler-staging.fluxtion-playground.dev", null);
+        assertEquals("https://meticulous-comfort-69-staging.authkit.app", staging);
+        VerificationOrigin.check(staging + "/activate?user_code=DEMO", staging);
+        assertThrows(java.io.IOException.class, () -> VerificationOrigin.check("https://different.authkit.app/activate", staging));
+        assertNull(VerificationOrigin.trusted("https://compiler.fluxtion-playground.dev", null));
+        assertThrows(java.io.IOException.class, () -> VerificationOrigin.check(staging, null));
+    }
+
 }

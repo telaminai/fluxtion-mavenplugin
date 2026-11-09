@@ -43,6 +43,9 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
     @Parameter(property = "fluxtion.login.verificationOrigin")
     protected String verificationOrigin;
 
+    @Parameter(property = "fluxtion.login.replaceService", defaultValue = "false")
+    protected boolean replaceService;
+
     private AuthRecords records;
 
     /** Waits between polls; replaced in tests. */
@@ -89,9 +92,16 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         }
         checkExecutionUrls();
         CredentialStore store = credentialStore();
-        CredentialStore.Stored previous = readQuietly(store);
+        CredentialStore.Stored previous;
+        try { previous = store.read(); }
+        catch (IOException e) { throw new MojoExecutionException("Stored sign-in could not be read; it has not been changed."); }
         CompilerUrl url = compilerUrl(previous == null ? CompilerCredentials.DEFAULT_COMPILER_URL : previous.url);
         records.compiler = url.toString();
+        if (previous != null && !url.sameOrigin(parseQuietly(previous.url)) && !replaceService) {
+            emit("usage_error", "unknown", "stored", null, null);
+            throw new MojoFailureException("Switching compiler service replaces and revokes the previous machine sign-in. "
+                    + "Confirm with -Dfluxtion.login.replaceService=true. No request sent.");
+        }
         CompilerAuthClient client = clientFactory.apply(url);
         if (!force && previous != null && url.sameOrigin(parseQuietly(previous.url))) {
             try {
@@ -106,11 +116,12 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
             }
         }
 
+        String trustedVerificationOrigin = VerificationOrigin.trusted(url.toString(), verificationOrigin);
         CompilerAuthClient.DeviceAuthorization auth;
         try {
             auth = client.authorize();
-            VerificationOrigin.check(auth.verificationUri, verificationOrigin);
-            if (auth.verificationUriComplete != null) VerificationOrigin.check(auth.verificationUriComplete, verificationOrigin);
+            VerificationOrigin.check(auth.verificationUri, trustedVerificationOrigin);
+            if (auth.verificationUriComplete != null) VerificationOrigin.check(auth.verificationUriComplete, trustedVerificationOrigin);
             if (auth.userCode.length() > 128 || auth.expiresInSeconds <= 0 || auth.expiresInSeconds > 1800)
                 throw new IOException("Invalid sign-in code or expiry.");
         } catch (IOException e) {
@@ -162,8 +173,8 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
             throw new MojoExecutionException("Approval completed but account identity could not be verified; credential not saved.");
         }
         try {
-            store.write(new CredentialStore.Stored(issued.accessToken, issued.credentialId, issued.accountId,
-                    url.toString()));
+            if (!store.compareAndWrite(previous, new CredentialStore.Stored(issued.accessToken, issued.credentialId,
+                    issued.accountId, url.toString()))) throw new IOException("another sign-in changed the store; retry explicitly");
         } catch (IOException e) {
             // the credential is live but unsaved: revoke it rather than leave it orphaned
             boolean revoked = revokeQuietly(client, issued.credentialId, issued.accessToken);
@@ -178,7 +189,8 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         getLog().info("Credential saved to " + store.file() + " (readable only by you)."
                 + " mvn fluxtion:logout removes and revokes it.");
 
-        if (previous != null && previous.credentialId != null && !previous.credentialId.equals(issued.credentialId)) {
+        if (previous != null && previous.credentialId != null && (!previous.credentialId.equals(issued.credentialId)
+                || !url.sameOrigin(parseQuietly(previous.url)))) {
             CompilerUrl previousUrl = parseQuietly(previous.url);
             if (previousUrl != null) {
                 revokeQuietly(clientFactory.apply(previousUrl), previous.credentialId, previous.token);
@@ -241,14 +253,6 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
                     + " after a connection failure; revoke it from the account's credentials list.");
         }
         return false;
-    }
-
-    private CredentialStore.Stored readQuietly(CredentialStore store) {
-        try {
-            return store.read();
-        } catch (IOException e) {
-            return null;
-        }
     }
 
     private static CompilerUrl parseQuietly(String text) {

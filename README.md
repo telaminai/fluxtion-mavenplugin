@@ -444,7 +444,21 @@ An environment token overrides saved sign-in: login refuses to change it and dir
 
 Before printing either browser address, login checks its exact HTTPS origin against
 `-Dfluxtion.login.verificationOrigin=https://<trusted-provider-host>`. This is the identity provider's origin,
-not the compiler or admin website. Production/staging defaults are pending operator confirmation; this candidate
-fails closed without the explicit trusted origin. Never derive this trusted setting from an unverified response.
+not the compiler or admin website. The staging compiler has an exact operator-confirmed default. Production
+remains unconfigured and fails closed until its exact provider origin is supplied. Never derive this trusted
+setting from an unverified response.
 Agents relay only the code and validated address; never read a credential file or request an API key.
 Existing released guides remain on 1.3.4 human output until this candidate has a release pin.
+
+### One active machine sign-in
+
+The candidate Analyser and Maven share the existing properties-format credential file. New writers use a persistent
+`credentials.lock`, owner-only atomic writes, and compare-before-replace/delete. A delayed logout cannot delete a
+newer sign-in. Paths containing symlinks, including parent links, are refused. Old clients do not use this lock;
+upgrade them before relying on concurrent-write protection. The Analyser offers an explicit, verified migration
+from its former OS store; neither client silently falls back to that old copy.
+
+To switch compiler service, select `-Dfluxtion.compilerUrl=...` and explicitly confirm
+`-Dfluxtion.login.replaceService=true`. Successful approval replaces the machine sign-in and attempts to revoke the
+previous credential at its original issuer. Failed approval leaves the old sign-in intact. Revocation warnings mean
+support or the user should check that account's devices. `logout` never removes an environment token.

@@ -1,7 +1,7 @@
 import os,json,subprocess,tempfile,threading
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
-root=Path(tempfile.mkdtemp(prefix='agent-login-records-'));state={'mode':'approved','polls':0}; output_seen=threading.Event()
+root=Path(tempfile.mkdtemp(prefix='agent-login-records-')).resolve();state={'mode':'approved','polls':0}; output_seen=threading.Event()
 class Fixture(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
  def reply(self,status,data):

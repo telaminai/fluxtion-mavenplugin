@@ -43,6 +43,7 @@ final class StubCompilerServer implements AutoCloseable {
     /** Responses for successive token polls: "status body". The last one repeats. */
     final Deque<String[]> tokenReplies = new ArrayDeque<>();
     int revokeStatus = 204;
+    Runnable beforeTokenReply = () -> {};
     /** What {@code GET /v1/usage} answers: by default a compiler from before credit kinds and plans. */
     volatile String usageBody = OLD_USAGE;
     int usageStatus = 200;
@@ -106,6 +107,7 @@ final class StubCompilerServer implements AutoCloseable {
                     + "\"verification_uri_complete\":\"https://login.example.com/device?user_code=WDJB-MJHT\","
                     + "\"expires_in\":" + expiresIn + ",\"interval\":" + interval + "}");
         } else if ("POST".equals(method) && "/auth/device/token".equals(path)) {
+            beforeTokenReply.run();
             String[] r;
             synchronized (tokenReplies) {
                 r = tokenReplies.size() > 1 ? tokenReplies.poll() : tokenReplies.peek();

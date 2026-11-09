@@ -11,7 +11,7 @@ import java.util.Map;
 public class FluxtionAccountMojoTest {
     @Test public void environmentWinsAndAccountComesFromServerNotSavedMetadata() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
             CredentialStore store = new CredentialStore(file);
             store.write(new CredentialStore.Stored("bad-saved-token", "old", "wrong-account", server.url()));
             RecordingLog log = new RecordingLog();
@@ -27,12 +27,12 @@ public class FluxtionAccountMojoTest {
             Assert.assertEquals(2, server.requests.size());
             Assert.assertTrue(server.requests.stream().allMatch(r -> r.method.equals("GET")));
             Assert.assertEquals("bad-saved-token", store.read().token);
-            Files.delete(file); Files.delete(file.getParent());
+            Files.delete(file); Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".lock")); Files.delete(file.getParent());
         }
     }
     @Test public void storedLoginWorksAndMissingUsageScopeRetainsVerifiedIdentity() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
             CredentialStore store = new CredentialStore(file);
             store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "stale-account", server.url()));
             RecordingLog log = new RecordingLog();
@@ -43,12 +43,12 @@ public class FluxtionAccountMojoTest {
             Assert.assertThrows(MojoExecutionException.class, m::execute);
             Assert.assertTrue(log.all().contains("Identity verified, but limits unavailable"));
             Assert.assertFalse(log.all().contains(StubCompilerServer.TOKEN));
-            Files.delete(file); Files.delete(file.getParent());
+            Files.delete(file); Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".lock")); Files.delete(file.getParent());
         }
     }
     @Test public void signedOutMakesNoRequestsAndRevokedCredentialIsNotAnAccount() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
             CredentialStore store = new CredentialStore(file); RecordingLog log = new RecordingLog();
             FluxtionAccountMojo m = mojo(server, store, log);
             Assert.assertThrows(MojoExecutionException.class, m::execute);
@@ -57,12 +57,12 @@ public class FluxtionAccountMojoTest {
             Assert.assertThrows(MojoExecutionException.class, m::execute);
             Assert.assertFalse(log.all().contains("server verified"));
             Assert.assertEquals(1, server.requests.size());
-            Files.delete(file); Files.delete(file.getParent());
+            Files.delete(file); Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".lock")); Files.delete(file.getParent());
         }
     }
     @Test public void mismatchedUsageIsNotPrintedAndSessionModeDoesNotQueryTokenAccount() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
-            Path file = Files.createTempDirectory("account-test").resolve("credentials");
+            Path file = Files.createTempDirectory("account-test").toRealPath().resolve("credentials");
             CredentialStore store = new CredentialStore(file);
             store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "acct-42", server.url()));
             RecordingLog log = new RecordingLog(); FluxtionAccountMojo m = mojo(server, store, log);
@@ -79,7 +79,7 @@ public class FluxtionAccountMojoTest {
                 if (previous == null) System.clearProperty("fluxtion.remote.auth");
                 else System.setProperty("fluxtion.remote.auth", previous);
             }
-            Files.delete(file); Files.delete(file.getParent());
+            Files.delete(file); Files.deleteIfExists(file.resolveSibling(file.getFileName() + ".lock")); Files.delete(file.getParent());
         }
     }
 

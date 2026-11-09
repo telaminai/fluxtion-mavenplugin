@@ -26,7 +26,7 @@ public class LoginLogoutMojoTest {
     @Before
     public void setUp() throws Exception {
         server = new StubCompilerServer();
-        home = Files.createTempDirectory("fluxtion-login-test");
+        home = Files.createTempDirectory("fluxtion-login-test").toRealPath();
         store = new CredentialStore(home.resolve(".fluxtion/credentials"));
         log = new RecordingLog();
     }
@@ -106,7 +106,7 @@ public class LoginLogoutMojoTest {
         Assert.assertFalse("credential printed", out.contains(StubCompilerServer.TOKEN));
         Assert.assertFalse("device code printed", out.contains(StubCompilerServer.DEVICE_CODE));
         try (java.util.stream.Stream<Path> files = Files.list(store.file().getParent())) {
-            Assert.assertEquals("only the credential is left behind", 1, files.count());
+            Assert.assertEquals("credential and persistent non-secret lock remain", 2, files.count());
         }
     }
 

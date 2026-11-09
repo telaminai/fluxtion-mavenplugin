@@ -47,7 +47,7 @@ public class RapidApiRetiredTest {
      */
     @Test
     public void theStoredCredentialKeepsTheKeysTheBuilderReads() throws Exception {
-        Path home = Files.createTempDirectory("fluxtion-store-format");
+        Path home = Files.createTempDirectory("fluxtion-store-format").toRealPath();
         CredentialStore store = new CredentialStore(home.resolve(".fluxtion/credentials"));
         store.write(new CredentialStore.Stored("fixture-not-a-credential", "cred-1", "acct-1",
                 "https://compiler.example.com"));
@@ -62,7 +62,7 @@ public class RapidApiRetiredTest {
     /** {@code mvn fluxtion:login} with no URL signs in to the managed compiler (no network here: the client is stubbed). */
     @Test
     public void loginWithNoUrlSignsInToTheManagedCompiler() throws Exception {
-        Path home = Files.createTempDirectory("fluxtion-login-default");
+        Path home = Files.createTempDirectory("fluxtion-login-default").toRealPath();
         FluxtionLoginMojo m = new FluxtionLoginMojo();
         m.env = name -> null;
         m.credentialStore = new CredentialStore(home.resolve(".fluxtion/credentials"));

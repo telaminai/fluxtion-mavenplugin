@@ -6,6 +6,13 @@ import java.net.URI;
 /** Exact provider-origin validation, separate from compiler/admin routing. No trust inferred from a reply. */
 final class VerificationOrigin {
     private VerificationOrigin() { }
+    static String trusted(String compilerOrigin, String explicit) {
+        if (explicit != null && !explicit.trim().isEmpty()) return explicit.trim();
+        if ("https://compiler-staging.fluxtion-playground.dev".equals(compilerOrigin))
+            return "https://meticulous-comfort-69-staging.authkit.app";
+        // Production deliberately unconfigured until the operator supplies its exact WorkOS origin.
+        return null;
+    }
     static void check(String value, String trustedOrigin) throws IOException {
         if (value == null || value.length() > 2048 || trustedOrigin == null || trustedOrigin.trim().isEmpty())
             throw new IOException("Configure the trusted verification origin before sign-in.");

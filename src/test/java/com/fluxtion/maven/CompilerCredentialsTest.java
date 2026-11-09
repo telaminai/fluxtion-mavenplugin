@@ -45,7 +45,7 @@ public class CompilerCredentialsTest {
         when(build.getSourceDirectory()).thenReturn(new File(baseDir, "src/main/java").getAbsolutePath());
         when(project.getCompileClasspathElements()).thenReturn(Collections.emptyList());
 
-        home = Files.createTempDirectory("fluxtion-auth-test");
+        home = Files.createTempDirectory("fluxtion-auth-test").toRealPath();
         mojo = new FluxtionScanToGenMojo();
         mojo.project = project;
         mojo.env = env::get;

@@ -20,11 +20,19 @@ public class IndependentLoginEvidenceTest {
         mojo.setLog(new RecordingLog());
         return mojo;
     }
+    private void blockAfterApproval(StubCompilerServer server, Path path) throws Exception {
+        Files.delete(path); Files.createDirectory(path);
+        server.beforeTokenReply = () -> {
+            try { Files.delete(path); Files.createFile(path); }
+            catch (java.io.IOException e) { throw new IllegalStateException(e); }
+        };
+    }
     @Test public void failedRevokeMustNotBeReportedAsRevoked() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
             server.tokenReply(200, StubCompilerServer.success());
             server.revokeStatus = 500;
-            Path blockingFile = Files.createTempFile("review-not-directory", ".tmp");
+            Path blockingFile = Files.createTempFile("review-not-directory", ".tmp").toRealPath();
+            blockAfterApproval(server, blockingFile);
             CredentialStore store = new CredentialStore(blockingFile.resolve("credentials"));
             try {
                 login(server, store).execute();
@@ -41,7 +49,7 @@ public class IndependentLoginEvidenceTest {
     @Test public void unknownErrorMustNotEchoTheDeviceSecret() throws Exception {
         try (StubCompilerServer server = new StubCompilerServer()) {
             server.tokenReply(400, "{\"error\":\"" + StubCompilerServer.DEVICE_CODE + "\"}");
-            Path dir = Files.createTempDirectory("review-device-log");
+            Path dir = Files.createTempDirectory("review-device-log").toRealPath();
             try {
                 login(server, new CredentialStore(dir.resolve("credential"))).execute();
                 fail("unknown error must fail sign-in");
@@ -57,7 +65,8 @@ public class IndependentLoginEvidenceTest {
             try (StubCompilerServer server = new StubCompilerServer()) {
                 server.tokenReply(200, StubCompilerServer.success());
                 server.revokeStatus = status;
-                Path blockingFile = Files.createTempFile("review-cleanup-status", ".tmp");
+                Path blockingFile = Files.createTempFile("review-cleanup-status", ".tmp").toRealPath();
+                blockAfterApproval(server, blockingFile);
                 try {
                     login(server, new CredentialStore(blockingFile.resolve("credentials"))).execute();
                     fail("credential storage must fail");
