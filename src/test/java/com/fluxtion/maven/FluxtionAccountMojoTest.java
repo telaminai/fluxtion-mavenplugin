@@ -106,7 +106,7 @@ public class FluxtionAccountMojoTest {
                 request, new org.apache.maven.execution.DefaultMavenExecutionResult());
         m.checkExecutionUrls();
         Assert.assertEquals("https://chosen.example.test", m.compilerUrl);
-        properties.clear();
+        m.session.getUserProperties().clear();
         m.compilerUrl = null;
         org.apache.maven.project.MavenProject child = m.project;
         m.project = new org.apache.maven.project.MavenProject();
