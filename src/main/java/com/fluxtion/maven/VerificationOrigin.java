@@ -10,7 +10,8 @@ final class VerificationOrigin {
         if (explicit != null && !explicit.trim().isEmpty()) return explicit.trim();
         if ("https://compiler-staging.fluxtion-playground.dev".equals(normalizeCompilerOrigin(compilerOrigin)))
             return "https://meticulous-comfort-69-staging.authkit.app";
-        // Production deliberately unconfigured until the operator supplies its exact WorkOS origin.
+        if ("https://compiler.fluxtion-playground.dev".equals(normalizeCompilerOrigin(compilerOrigin)))
+            return "https://restful-nature-87.authkit.app";
         return null;
     }
     private static String normalizeCompilerOrigin(String value) {

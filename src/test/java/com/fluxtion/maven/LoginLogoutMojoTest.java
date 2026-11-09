@@ -234,6 +234,7 @@ public class LoginLogoutMojoTest {
         Files.writeString(target, "untouched");
         Files.createSymbolicLink(lock, target);
         Exception failure = Assert.assertThrows(org.apache.maven.plugin.MojoExecutionException.class, () -> logout().execute());
+        Assert.assertNull("Maven must not append a raw native-error cause", failure.getCause());
         Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("Revocation was attempted"));
         Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("symbolic links"));
         Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("credentials.lock"));

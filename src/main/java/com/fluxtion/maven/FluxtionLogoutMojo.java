@@ -31,7 +31,7 @@ public class FluxtionLogoutMojo extends AbstractCompilerAccountMojo {
             throw new MojoExecutionException("Revocation was attempted, but the local sign-in could not be removed from " + store.file()
                     + ". Check this file and its " + store.file().getFileName() + ".lock sibling for symbolic links or invalid permissions. "
                     + "Do not follow or delete a link target. Correct the local path and rerun logout; "
-                    + "the retained credential may already be revoked.", e);
+                    + "the retained credential may already be revoked.");
         }
         getLog().info("Signed out: removed " + store.file() + ".");
         envNote();
