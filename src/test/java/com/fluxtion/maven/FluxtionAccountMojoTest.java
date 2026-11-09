@@ -106,6 +106,18 @@ public class FluxtionAccountMojoTest {
                 request, new org.apache.maven.execution.DefaultMavenExecutionResult());
         m.checkExecutionUrls();
         Assert.assertEquals("https://chosen.example.test", m.compilerUrl);
+        properties.clear();
+        m.compilerUrl = null;
+        org.apache.maven.project.MavenProject child = m.project;
+        m.project = new org.apache.maven.project.MavenProject();
+        m.session.setProjects(java.util.Arrays.asList(m.project, child));
+        Assert.assertThrows(MojoExecutionException.class, m::checkExecutionUrls);
+        execution.setConfiguration(null);
+        plugin.setConfiguration(config);
+        Assert.assertThrows(MojoExecutionException.class, m::checkExecutionUrls);
+        plugin.setConfiguration(null);
+        child.getProperties().setProperty("fluxtion.compilerUrl", "https://child.example.test");
+        Assert.assertThrows(MojoExecutionException.class, m::checkExecutionUrls);
     }
 
     private FluxtionAccountMojo mojo(StubCompilerServer server, CredentialStore store, RecordingLog log) {
