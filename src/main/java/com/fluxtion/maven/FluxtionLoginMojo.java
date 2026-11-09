@@ -157,7 +157,7 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
             auth = client.authorize();
             VerificationOrigin.check(auth.verificationUri, trustedVerificationOrigin);
             if (auth.verificationUriComplete != null) VerificationOrigin.check(auth.verificationUriComplete, trustedVerificationOrigin);
-            if (auth.userCode.length() > 128 || auth.expiresInSeconds <= 0 || auth.expiresInSeconds > 1800)
+            if (auth.userCode == null || !auth.userCode.matches("[A-Za-z0-9 -]{1,32}") || auth.expiresInSeconds <= 0 || auth.expiresInSeconds > 1800)
                 throw new IOException("Invalid sign-in code or expiry.");
         } catch (IOException e) {
             throw new MojoExecutionException("Could not start sign-in at " + url + ": " + e.getMessage(), e);

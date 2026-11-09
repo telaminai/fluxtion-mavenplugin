@@ -122,4 +122,27 @@ public class AuthRecordsTest {
         }
     }
 
+    @Test public void invalidUserCodesAreNeverPrintedOrPolled() throws Exception {
+        for (String code : Arrays.asList("", "A\nB", "A\u001b[31m", "<script>", "é", "A".repeat(33))) {
+            try (StubCompilerServer s = new StubCompilerServer()) {
+                Path dir = Files.createTempDirectory("invalid-user-code");
+                try {
+                    CredentialStore store = new CredentialStore(dir.resolve("credentials"));
+                    RecordingLog log = new RecordingLog();
+                    s.userCode = code;
+                    s.tokenReply(200, StubCompilerServer.success());
+                    assertThrows(org.apache.maven.plugin.MojoExecutionException.class, () -> mojo(s, store, log).execute());
+                    assertEquals(0, s.requests("POST", "/auth/device/token").size());
+                    assertFalse(log.all().contains("\"event\":\"pending\""));
+                    if (!code.isEmpty()) assertFalse(log.all().contains(code));
+                    assertFalse(store.exists());
+                } finally {
+                    try (java.util.stream.Stream<Path> paths = Files.walk(dir)) {
+                        paths.sorted(Comparator.reverseOrder()).forEach(p -> { try { Files.delete(p); } catch(Exception ignored) {} });
+                    }
+                }
+            }
+        }
+    }
+
 }

@@ -28,8 +28,10 @@ public class FluxtionLogoutMojo extends AbstractCompilerAccountMojo {
                 envNote(); return;
             }
         } catch (IOException e) {
-            throw new MojoExecutionException("Could not delete " + store.file() + " (" + e.getMessage()
-                    + "); delete it by hand.", e);
+            throw new MojoExecutionException("Revocation was attempted, but the local sign-in could not be removed from " + store.file()
+                    + ". Check this file and its " + store.file().getFileName() + ".lock sibling for symbolic links or invalid permissions. "
+                    + "Do not follow or delete a link target. Correct the local path and rerun logout; "
+                    + "the retained credential may already be revoked.", e);
         }
         getLog().info("Signed out: removed " + store.file() + ".");
         envNote();

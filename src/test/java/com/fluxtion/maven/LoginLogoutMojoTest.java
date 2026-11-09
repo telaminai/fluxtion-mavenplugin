@@ -225,4 +225,22 @@ public class LoginLogoutMojoTest {
         Assert.assertTrue(log.all().contains("new sign-in was retained"));
     }
 
+    @Test public void refusedLogoutLockExplainsRevocationAndPreservesLinkTarget() throws Exception {
+        org.junit.Assume.assumeFalse(System.getProperty("os.name").startsWith("Windows"));
+        store.write(new CredentialStore.Stored(StubCompilerServer.TOKEN, "cred1", "acct-42", server.url()));
+        Path lock = store.file().resolveSibling("credentials.lock");
+        Files.deleteIfExists(lock);
+        Path target = home.resolve("untouched-lock-target");
+        Files.writeString(target, "untouched");
+        Files.createSymbolicLink(lock, target);
+        Exception failure = Assert.assertThrows(org.apache.maven.plugin.MojoExecutionException.class, () -> logout().execute());
+        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("Revocation was attempted"));
+        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("symbolic links"));
+        Assert.assertTrue(failure.getMessage(), failure.getMessage().contains("credentials.lock"));
+        Assert.assertEquals(1, server.requests("DELETE", "/v1/credentials/cred1").size());
+        Assert.assertTrue(Files.isSymbolicLink(lock));
+        Assert.assertEquals("untouched", Files.readString(target));
+        Assert.assertNotNull(store.read());
+    }
+
 }
