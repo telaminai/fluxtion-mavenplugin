@@ -76,6 +76,17 @@ public class AuthRecordsTest {
             Files.delete(dir);
         }
     }
+    @Test public void oversizedPollIntervalCannotOutliveExpiry() throws Exception {
+        try (StubCompilerServer s = new StubCompilerServer()) {
+            CompilerAuthClient c = new CompilerAuthClient(CompilerUrl.parse(s.url()));
+            long[] now = {0};
+            CompilerAuthClient.DeviceAuthorization a = new CompilerAuthClient.DeviceAuthorization(
+                "synthetic", "DEMO", "https://login.example.com", null, 30, Long.MAX_VALUE);
+            assertThrows(CompilerAuthClient.DeviceFlowException.class,
+                () -> c.pollForToken(a, ms -> { assertTrue(ms <= 30000); now[0] += ms; }, () -> now[0]));
+            assertEquals(30000,now[0]); assertTrue(s.requests.isEmpty());
+        }
+    }
     @Test public void originValidationRejectsLookalikesUserInfoAndFragments() throws Exception {
         VerificationOrigin.check("https://login.example.com/device?user_code=A","https://login.example.com");
         for (String uri : Arrays.asList("http://login.example.com/device", "https://login.example.com.evil.test/device",

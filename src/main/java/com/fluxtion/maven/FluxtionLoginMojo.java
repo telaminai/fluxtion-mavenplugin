@@ -119,7 +119,7 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         Map<String, Object> pending = new java.util.LinkedHashMap<>();
         pending.put("verificationUri", auth.verificationUriComplete != null ? auth.verificationUriComplete : auth.verificationUri);
         pending.put("userCode", auth.userCode); pending.put("expiresIn", auth.expiresInSeconds);
-        emit("pending", "signed_out", "stored", null, pending);
+        emit("pending", "unknown", "stored", null, pending);
         getLog().info("");
         getLog().info("To sign in to the Fluxtion compiler, open:");
         getLog().info("    " + auth.verificationUri);
@@ -141,13 +141,13 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         } catch (CompilerAuthClient.DeviceFlowException e) {
             emit(e.reason == CompilerAuthClient.DeviceFlowException.Reason.DENIED ? "denied"
                     : e.reason == CompilerAuthClient.DeviceFlowException.Reason.EXPIRED ? "expired" : "service_error",
-                    "signed_out", "stored", null, null);
+                    "unknown", "stored", null, null);
             throw new MojoFailureException(e.getMessage());
         } catch (IOException e) {
             throw new MojoExecutionException("Sign-in failed: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            emit("cancelled", "signed_out", "stored", null, null);
+            emit("cancelled", "unknown", "stored", null, null);
             throw new MojoFailureException("Sign-in cancelled.");
         } finally {
             finished.set(true);
