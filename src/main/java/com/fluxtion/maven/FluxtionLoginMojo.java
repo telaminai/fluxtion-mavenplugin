@@ -37,6 +37,14 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
     @Parameter(property = "fluxtion.login.browser", defaultValue = "true")
     protected boolean browser = true;
 
+    @Parameter(property = "fluxtion.login.force", defaultValue = "false")
+    protected boolean force;
+
+    @Parameter(property = "fluxtion.login.verificationOrigin")
+    protected String verificationOrigin;
+
+    private AuthRecords records;
+
     /** Waits between polls; replaced in tests. */
     CompilerAuthClient.Sleeper sleeper = Thread::sleep;
 
@@ -45,20 +53,73 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        terminalEmitted.set(false);
+        records = new AuthRecords(getLog());
+        Thread cancellation = new Thread(() -> emit("cancelled", "unknown", null, null, null), "fluxtion-login-cancel");
+        Runtime.getRuntime().addShutdownHook(cancellation);
+        try {
+            executeLogin();
+        } catch (MojoFailureException | MojoExecutionException e) {
+            // Specific device outcomes are emitted at their transition. Unclassified failures remain unknown.
+            if (!terminalEmitted.get()) emit("service_error", "unknown", null, null, null);
+            throw e;
+        } catch (RuntimeException e) {
+            if (!terminalEmitted.get()) emit("service_error", "unknown", null, null, null);
+            throw new MojoExecutionException("Compiler sign-in failed before completion.");
+        } finally {
+            try { Runtime.getRuntime().removeShutdownHook(cancellation); } catch (IllegalStateException ignored) { }
+        }
+    }
+
+    private final AtomicBoolean terminalEmitted = new AtomicBoolean();
+    private void emit(String event, String identity, String source, String account, Map<String, Object> extra) {
+        if (!"pending".equals(event) && !terminalEmitted.compareAndSet(false, true)) return;
+        records.emit(event, identity, source, account, extra);
+    }
+
+    private void executeLogin() throws MojoExecutionException, MojoFailureException {
         if (CompilerCredentials.isCi(env)) {
+            emit("usage_error", "unknown", null, null, null);
             throw new MojoFailureException(CI_REFUSAL);
         }
+        String envToken = env.apply(CompilerCredentials.ENV_TOKEN);
+        if (envToken != null && !envToken.trim().isEmpty()) {
+            emit("usage_error", "unknown", "environment", null, null);
+            throw new MojoFailureException("FLUXTION_API_TOKEN overrides saved sign-in. Use the account goal to diagnose it; login does not change it.");
+        }
+        checkExecutionUrls();
         CredentialStore store = credentialStore();
         CredentialStore.Stored previous = readQuietly(store);
         CompilerUrl url = compilerUrl(previous == null ? CompilerCredentials.DEFAULT_COMPILER_URL : previous.url);
+        records.compiler = url.toString();
         CompilerAuthClient client = clientFactory.apply(url);
+        if (!force && previous != null && url.sameOrigin(parseQuietly(previous.url))) {
+            try {
+                String account = verifiedAccount(client, previous.token);
+                emit("signed_in", "verified", "stored", account, null);
+                getLog().info("Already signed in; server verified account " + account + " at " + url + ".");
+                return;
+            } catch (CompilerAuthClient.CredentialRejected ignored) {
+                // A revoked credential is not a sign-in. Start the approval flow below.
+            } catch (IOException e) {
+                throw new MojoExecutionException("Could not verify existing sign-in; service unavailable or identity invalid. No new login started.");
+            }
+        }
 
         CompilerAuthClient.DeviceAuthorization auth;
         try {
             auth = client.authorize();
+            VerificationOrigin.check(auth.verificationUri, verificationOrigin);
+            if (auth.verificationUriComplete != null) VerificationOrigin.check(auth.verificationUriComplete, verificationOrigin);
+            if (auth.userCode.length() > 128 || auth.expiresInSeconds <= 0 || auth.expiresInSeconds > 1800)
+                throw new IOException("Invalid sign-in code or expiry.");
         } catch (IOException e) {
             throw new MojoExecutionException("Could not start sign-in at " + url + ": " + e.getMessage(), e);
         }
+        Map<String, Object> pending = new java.util.LinkedHashMap<>();
+        pending.put("verificationUri", auth.verificationUriComplete != null ? auth.verificationUriComplete : auth.verificationUri);
+        pending.put("userCode", auth.userCode); pending.put("expiresIn", auth.expiresInSeconds);
+        emit("pending", "signed_out", "stored", null, pending);
         getLog().info("");
         getLog().info("To sign in to the Fluxtion compiler, open:");
         getLog().info("    " + auth.verificationUri);
@@ -78,16 +139,28 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         try {
             issued = client.pollForToken(auth, sleeper, clockMillis);
         } catch (CompilerAuthClient.DeviceFlowException e) {
+            emit(e.reason == CompilerAuthClient.DeviceFlowException.Reason.DENIED ? "denied"
+                    : e.reason == CompilerAuthClient.DeviceFlowException.Reason.EXPIRED ? "expired" : "service_error",
+                    "signed_out", "stored", null, null);
             throw new MojoFailureException(e.getMessage());
         } catch (IOException e) {
             throw new MojoExecutionException("Sign-in failed: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            emit("cancelled", "signed_out", "stored", null, null);
             throw new MojoFailureException("Sign-in cancelled.");
         } finally {
             finished.set(true);
         }
 
+        String verified;
+        try {
+            verified = verifiedAccount(client, issued.accessToken);
+            if (!verified.equals(issued.accountId)) throw new IOException("issued account does not match verified identity");
+        } catch (IOException e) {
+            revokeQuietly(client, issued.credentialId, issued.accessToken);
+            throw new MojoExecutionException("Approval completed but account identity could not be verified; credential not saved.");
+        }
         try {
             store.write(new CredentialStore.Stored(issued.accessToken, issued.credentialId, issued.accountId,
                     url.toString()));
@@ -100,6 +173,7 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
                     + (issued.credentialId == null ? "(id unavailable)" : CompilerAuthClient.printable(issued.credentialId))
                     + " from the account's credentials list."), e);
         }
+        emit("signed_in", "verified", "stored", verified, null);
         getLog().info("Signed in to " + url + " as account " + CompilerAuthClient.printable(issued.accountId) + ".");
         getLog().info("Credential saved to " + store.file() + " (readable only by you)."
                 + " mvn fluxtion:logout removes and revokes it.");
@@ -119,6 +193,13 @@ public class FluxtionLoginMojo extends AbstractCompilerAccountMojo {
         } catch (IOException e) {
             getLog().warn("Signed in, but the remaining credits could not be read (" + e.getMessage() + ").");
         }
+    }
+
+    private String verifiedAccount(CompilerAuthClient client, String token) throws IOException {
+        String account = Json.str(client.me(token), "selectedAccount");
+        if (account == null || !account.matches("[A-Za-z0-9_:.-]{3,128}"))
+            throw new IOException("invalid account identity");
+        return account;
     }
 
     private boolean browserAvailable() {

@@ -45,6 +45,7 @@ public class LoginLogoutMojoTest {
         m.credentialStore = store;
         m.compilerUrl = server.url();
         m.browser = false;
+        m.verificationOrigin = "https://login.example.com";
         m.sleeper = millis -> now[0] += millis;
         m.clockMillis = () -> now[0];
         m.setLog(log);

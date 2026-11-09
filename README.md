@@ -432,3 +432,19 @@ The `account` goal runs once per reactor. If a POM execution configures a differ
 it stops before credential resolution or any request. Repeat with explicit
 `-Dfluxtion.compilerUrl=<the build's service URL>` to select the intended service.
 The diagnostics candidate uses `1.3.5-SNAPSHOT`; do not install it as released `1.3.4`.
+
+### Agent-readable sign-in (candidate)
+
+This candidate emits `FLUXTION-AUTH` JSON records among normal Maven output. Match records by `attemptId`:
+`pending` provides the browser verification address, user code and expiry; terminal events are `signed_in`,
+`denied`, `expired`, `cancelled`, `service_error` or `usage_error`. Maven still owns the process exit status.
+An approval is not reported as signed in until `/v1/me` confirms its account. Repeating login verifies the existing
+credential; `-Dfluxtion.login.force=true` requests a fresh approval. An outage leaves identity unknown.
+An environment token overrides saved sign-in: login refuses to change it and directs the user to `account`.
+
+Before printing either browser address, login checks its exact HTTPS origin against
+`-Dfluxtion.login.verificationOrigin=https://<trusted-provider-host>`. This is the identity provider's origin,
+not the compiler or admin website. Production/staging defaults are pending operator confirmation; this candidate
+fails closed without the explicit trusted origin. Never derive this trusted setting from an unverified response.
+Agents relay only the code and validated address; never read a credential file or request an API key.
+Existing released guides remain on 1.3.4 human output until this candidate has a release pin.

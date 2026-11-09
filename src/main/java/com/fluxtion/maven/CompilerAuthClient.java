@@ -212,10 +212,15 @@ final class CompilerAuthClient {
         }
     }
 
+    static final class CredentialRejected extends IOException {
+        CredentialRejected() { super("the service refused the credential"); }
+    }
+
     /** Identity of this exact bearer; no email requested or credential echoed. */
     Map<String, Object> me(String token) throws IOException {
         Response r = send("GET", "/v1/me", null, token);
-        if (r.status != 200) throw new IOException("account unavailable: " + describe(r));
+        if (r.status == 401) throw new CredentialRejected();
+        if (r.status != 200) throw new IOException("account unavailable (HTTP " + r.status + ")");
         return parse(r);
     }
 

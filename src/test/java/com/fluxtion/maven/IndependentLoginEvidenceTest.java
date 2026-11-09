@@ -13,6 +13,7 @@ public class IndependentLoginEvidenceTest {
         mojo.credentialStore = store;
         mojo.compilerUrl = server.url();
         mojo.browser = false;
+        mojo.verificationOrigin = "https://login.example.com";
         long[] now = {0};
         mojo.clockMillis = () -> now[0];
         mojo.sleeper = millis -> now[0] += millis;
