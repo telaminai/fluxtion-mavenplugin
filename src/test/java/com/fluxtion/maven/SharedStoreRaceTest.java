@@ -19,7 +19,7 @@ public class SharedStoreRaceTest {
         System.out.println(won ? "won" : "retained");
     }
     @Test public void twoProcessesCannotBothReplaceTheSameSnapshot() throws Exception {
-        Path dir=Files.createTempDirectory("store-race").toRealPath(); Path file=dir.resolve("credentials");
+        Path dir=Files.createTempDirectory("store-race"); Path file=dir.resolve("credentials");
         String java=Paths.get(System.getProperty("java.home"),"bin","java").toString();
         Process a=new ProcessBuilder(java,"-cp",System.getProperty("java.class.path"),getClass().getName(),file.toString(),"a").start();
         Process b=new ProcessBuilder(java,"-cp",System.getProperty("java.class.path"),getClass().getName(),file.toString(),"b").start();
@@ -35,7 +35,7 @@ public class SharedStoreRaceTest {
         } finally { a.destroyForcibly(); b.destroyForcibly(); Files.deleteIfExists(file); Files.deleteIfExists(dir.resolve("credentials.lock")); Files.delete(dir); }
     }
     @Test public void parentSubstitutionNeverReadsOutsideCredential() throws Exception {
-        Path root=Files.createTempDirectory("store-parent-race").toRealPath();
+        Path root=Files.createTempDirectory("store-parent-race");
         Path safe=Files.createDirectory(root.resolve("safe")), held=root.resolve("held"), outside=Files.createDirectory(root.resolve("outside"));
         CredentialStore store=new CredentialStore(safe.resolve("credentials"));
         store.write(new CredentialStore.Stored("inside","i","acct-i","https://compiler.example.com"));
@@ -58,7 +58,7 @@ public class SharedStoreRaceTest {
         assertNull(failure.get());
     }
     @Test public void symlinkAndDanglingParentsAreNotFollowed() throws Exception {
-        Path dir=Files.createTempDirectory("store-links").toRealPath(); Path link=dir.resolve("link");
+        Path dir=Files.createTempDirectory("store-links"); Path link=dir.resolve("link");
         Files.createSymbolicLink(link,dir.resolve("absent")); CredentialStore s=new CredentialStore(link.resolve("credentials"));
         assertThrows(java.io.IOException.class,s::read); assertThrows(java.io.IOException.class,s::delete);
         assertThrows(java.io.IOException.class,()->s.write(new CredentialStore.Stored("synthetic","id","acct-demo","https://compiler.example.com")));
@@ -66,7 +66,7 @@ public class SharedStoreRaceTest {
     }
     @Test public void linuxLockContentionHasBoundedWait() throws Exception {
         org.junit.Assume.assumeTrue(System.getProperty("os.name", "").toLowerCase().contains("linux"));
-        Path dir=Files.createTempDirectory("store-lock-timeout").toRealPath();
+        Path dir=Files.createTempDirectory("store-lock-timeout");
         Path file=dir.resolve("credentials"), lock=dir.resolve("credentials.lock");
         String javaCommand=Paths.get(System.getProperty("java.home"),"bin","java").toString();
         Process child=new ProcessBuilder(javaCommand,"-cp",System.getProperty("java.class.path"),getClass().getName(),lock.toString(),"hold").start();

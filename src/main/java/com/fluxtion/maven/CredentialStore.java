@@ -19,23 +19,63 @@ final class CredentialStore {
     }
     private final Path file;
     private final boolean legacyFormat;
+    private final IOException pathFailure;
     private boolean windows() { return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows"); }
     private boolean mac() { return System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).contains("mac"); }
     CredentialStore(Path file) { this(file, false); }
-    CredentialStore(Path file, boolean legacyFormat) { this.file=file.toAbsolutePath().normalize(); this.legacyFormat=legacyFormat; }
+    CredentialStore(Path file, boolean legacyFormat) { this(file, legacyFormat, inferredTrustedRoot(file)); }
+    CredentialStore(Path file, boolean legacyFormat, Path trustedRoot) {
+        Path requested=file.toAbsolutePath().normalize(), resolved=requested;
+        IOException failure=null;
+        try { resolved=resolveTrustedPrefix(requested,trustedRoot.toAbsolutePath().normalize()); }
+        catch(IOException e) { failure=new IOException("Cannot access the trusted home or configured credential directory. Check its path and permissions.",e); }
+        this.file=resolved;this.legacyFormat=legacyFormat;this.pathFailure=failure;
+    }
+    private CredentialStore(Path resolvedFile,boolean legacyFormat,IOException pathFailure) {
+        this.file=resolvedFile;this.legacyFormat=legacyFormat;this.pathFailure=pathFailure;
+    }
+    /** Derived metadata must retain this store's trust boundary, never re-trust its owned parent. */
+    CredentialStore sibling(String name) {
+        Path part=Paths.get(name);
+        if(name.isEmpty()||part.isAbsolute()||part.getNameCount()!=1||".".equals(name)||"..".equals(name))
+            throw new IllegalArgumentException("A credential sibling must be one file name.");
+        return new CredentialStore(file.resolveSibling(part),legacyFormat,pathFailure);
+    }
+    private static Path inferredTrustedRoot(Path file) {
+        Path requested=file.toAbsolutePath().normalize();
+        Path home=Paths.get(System.getProperty("user.home")).toAbsolutePath().normalize();
+        return requested.startsWith(home)?home:requested.getParent();
+    }
+    private static Path resolveTrustedPrefix(Path requested,Path trustedRoot) throws IOException {
+        if(!requested.startsWith(trustedRoot)||requested.equals(trustedRoot))throw new IOException("Invalid credential path boundary.");
+        Path existing=trustedRoot;
+        // Missing suffixes are created later through no-follow directory operations, never by this resolver.
+        while(!Files.exists(existing,LinkOption.NOFOLLOW_LINKS)) {
+            existing=existing.getParent();if(existing==null)throw new IOException("Credential directory has no existing root.");
+        }
+        Path canonical=existing.toRealPath().resolve(existing.relativize(trustedRoot));
+        return canonical.resolve(trustedRoot.relativize(requested));
+    }
+    private void checkPath() throws IOException { if(pathFailure!=null)throw pathFailure; }
     static CredentialStore defaultStore() {
         String override=System.getProperty(FILE_PROPERTY);
-        return new CredentialStore(override!=null&&!override.trim().isEmpty() ? Paths.get(override.trim())
-                : Paths.get(System.getProperty("user.home"),".fluxtion","credentials"));
+        if(override!=null&&!override.trim().isEmpty()) {
+            Path file=Paths.get(override.trim()).toAbsolutePath().normalize();
+            return new CredentialStore(file,false,file.getParent());
+        }
+        Path home=Paths.get(System.getProperty("user.home")).toAbsolutePath().normalize();
+        return new CredentialStore(home.resolve(".fluxtion").resolve("credentials"),false,home);
     }
     Path file() { return file; }
     boolean exists() {
+        if(pathFailure!=null)return false;
         if(windows()){try{return new WindowsCredentialFile(file,legacyFormat).read()!=null;}catch(IOException e){return false;}}
         if(mac()) { try { return new MacCredentialFile(file,legacyFormat).read()!=null; } catch(IOException e) {return false;} }
         try (Directory dir=directory(false)) { return regular(dir.handle,file.getFileName()); }
         catch (IOException e) { return false; }
     }
     Stored read() throws IOException {
+        checkPath();
         if(windows())return new WindowsCredentialFile(file,legacyFormat).read();
         if(mac()) return new MacCredentialFile(file,legacyFormat).read();
         try (Directory dir=directory(false)) { return read(dir.handle); }
@@ -87,6 +127,7 @@ final class CredentialStore {
     }
 
     boolean tooOpen() {
+        if(pathFailure!=null)return false;
         if(mac()) return new MacCredentialFile(file,legacyFormat).tooOpen();
         try (Directory dir=directory(false)) {
             Set<PosixFilePermission> p=dir.handle.getFileAttributeView(file.getFileName(),PosixFileAttributeView.class,
@@ -94,18 +135,20 @@ final class CredentialStore {
             return p.stream().anyMatch(v->v.name().startsWith("GROUP_")||v.name().startsWith("OTHERS_"));
         } catch (IOException|RuntimeException e) { return false; }
     }
-    void write(Stored value) throws IOException { if(windows()){new WindowsCredentialFile(file,legacyFormat).change(null,value,false);return;} if(mac()){new MacCredentialFile(file,legacyFormat).change(null,value,false);return;} locked(dir->{write(dir,value);return true;}); }
+    void write(Stored value) throws IOException { checkPath(); if(windows()){new WindowsCredentialFile(file,legacyFormat).change(null,value,false);return;} if(mac()){new MacCredentialFile(file,legacyFormat).change(null,value,false);return;} locked(dir->{write(dir,value);return true;}); }
     boolean compareAndWrite(Stored expected,Stored value) throws IOException {
+        checkPath();
         if(windows())return new WindowsCredentialFile(file,legacyFormat).change(expected,value,true);
         if(mac()) return new MacCredentialFile(file,legacyFormat).change(expected,value,true);
         return locked(dir->{if(!same(read(dir),expected))return false;write(dir,value);return true;});
     }
     boolean compareAndDelete(Stored expected) throws IOException {
+        checkPath();
         if(windows())return new WindowsCredentialFile(file,legacyFormat).change(expected,null,true);
         if(mac()) return new MacCredentialFile(file,legacyFormat).change(expected,null,true);
         return locked(dir->{if(!same(read(dir),expected))return false;remove(dir);return true;});
     }
-    boolean delete() throws IOException { if(windows())return new WindowsCredentialFile(file,legacyFormat).change(null,null,false); if(mac()) return new MacCredentialFile(file,legacyFormat).change(null,null,false); return locked(this::remove); }
+    boolean delete() throws IOException { checkPath(); if(windows())return new WindowsCredentialFile(file,legacyFormat).change(null,null,false); if(mac()) return new MacCredentialFile(file,legacyFormat).change(null,null,false); return locked(this::remove); }
     private boolean remove(SecureDirectoryStream<Path> dir) throws IOException {
         if(!regular(dir,file.getFileName()))return false;
         dir.deleteFile(file.getFileName());return true;

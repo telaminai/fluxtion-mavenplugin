@@ -26,7 +26,8 @@ final class MacCredentialFile {
     private final boolean legacyFormat;
     MacCredentialFile(Path file){this(file,false);}
     MacCredentialFile(Path file,boolean legacyFormat){this.file=file;this.legacyFormat=legacyFormat;}
-    private static IOException error(){return new IOException("Secure credential operation failed (OS error " + Native.getLastError()+").");}
+    private static IOException error(){return error(Native.getLastError());}
+    private static IOException error(int code){return new IOException("Secure credential operation failed (OS error " + code+").");}
     private int directory(boolean create) throws IOException {
         int current=C.open("/",DIRECTORY|NOFOLLOW|CLOEXEC);
         if(current<0)throw error();
@@ -57,6 +58,21 @@ final class MacCredentialFile {
         if(fd<0){if(absent&&Native.getLastError()==2)return -1;throw error();}
         try {regular(fd);return fd;} catch(IOException e){C.close(fd);throw e;}
     }
+    /** APFS can transiently return ENOENT when two processes create this same no-follow lock entry. */
+    private int openLock(int dir) throws IOException {
+        long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while(true) {
+            if(Thread.currentThread().isInterrupted())throw new IOException("Credential operation cancelled.");
+            int fd=C.openat(dir,file.getFileName()+".lock",CREATE|2|NOFOLLOW|CLOEXEC|NONBLOCK,0600);
+            if(fd>=0) {
+                try {regular(fd);return fd;}catch(IOException e){C.close(fd);throw e;}
+            }
+            int code=Native.getLastError();
+            if(code!=2)throw error(code);
+            if(System.nanoTime()-deadline>=0)throw new IOException("Compiler credential lock could not be created; retry.");
+            try {Thread.sleep(20);}catch(InterruptedException e){Thread.currentThread().interrupt();throw new IOException("Credential operation cancelled.");}
+        }
+    }
     CredentialStore.Stored read() throws IOException {
         int dir;
         try {dir=directory(false);} catch(NoSuchFileException e){return null;}
@@ -78,7 +94,7 @@ final class MacCredentialFile {
         synchronized(MacCredentialFile.class) {
             int dir=directory(true),lock=-1;
             try {
-                lock=openFile(dir,file.getFileName()+".lock",CREATE|2,false);
+                lock=openLock(dir);
                 long deadline=System.nanoTime()+java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
                 while(C.flock(lock,2|4)!=0){
                     if(Native.getLastError()!=35)throw error(); // EWOULDBLOCK on Darwin
